@@ -1,0 +1,3 @@
+- Prefers communicating in Spanish. Confidence: 0.9
+- Prefers to create a plan and analyze the requested changes before implementing them. Confidence: 0.9
+- Prefers an Apple-style UI aesthetic (subdued, user-friendly) over "liquid glass". Confidence: 0.8

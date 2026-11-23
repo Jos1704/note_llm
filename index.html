@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notas</title>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="lateral" class="lateral"></aside>
+
+      <section class="lista">
+        <header class="lista-cab">
+          <h2 id="lista-titulo">Todas las notas</h2>
+          <button id="btn-nueva" class="icono-btn" title="Nueva nota (Ctrl+N)"></button>
+        </header>
+        <label class="filtro">
+          <span id="filtro-icono"></span>
+          <input id="filtro" type="search" placeholder="Filtrar" autocomplete="off" spellcheck="false" />
+        </label>
+        <div id="notas" class="notas"></div>
+      </section>
+
+      <main class="zona">
+        <div id="vacio" class="vacio"></div>
+        <div id="editor" class="editor" hidden>
+          <header class="barra">
+            <button id="btn-volver" class="icono-btn solo-estrecha" title="Volver a la lista"></button>
+            <div class="modos" role="group" aria-label="Modo">
+              <button data-modo="editar" title="Solo editor"></button>
+              <button data-modo="dividido" title="Editor y vista previa"></button>
+              <button data-modo="vista" title="Solo vista previa"></button>
+            </div>
+            <span id="guardado" class="guardado"></span>
+            <div class="acciones">
+              <button id="btn-hoja" class="icono-btn" title="Hoja y pauta"></button>
+              <button id="btn-carpeta" class="icono-btn" title="Abrir carpeta"></button>
+              <button id="btn-borrar" class="icono-btn" title="Mover a la papelera"></button>
+            </div>
+          </header>
+          <input id="titulo" class="titulo" placeholder="Título" spellcheck="false" />
+          <div id="meta" class="meta">
+            <select id="sel-proyecto" title="Proyecto"></select>
+            <div id="chips" class="chips"></div>
+            <input id="nueva-etiqueta" class="nueva-etiqueta" list="sugerencias" placeholder="Añadir etiqueta" spellcheck="false" />
+            <datalist id="sugerencias"></datalist>
+          </div>
+          <div id="paneles" class="paneles">
+            <div id="cm" class="panel-editor"></div>
+            <article id="vista" class="panel-vista md"></article>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div id="capa"></div>
+    <div id="aviso" class="aviso" role="status"></div>
+  </body>
+</html>

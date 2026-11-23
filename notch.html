@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notas</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+      }
+      #notch {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 15px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(28, 28, 40, 0.72);
+        color: #fff;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+        cursor: pointer;
+        user-select: none;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      #notch:hover {
+        background: rgba(40, 40, 58, 0.82);
+      }
+      .plus {
+        font-size: 16px;
+        line-height: 1;
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="notch" title="Nota rápida"><span class="plus">+</span><span>Notas</span></button>
+    <script type="module" src="/src/notch.ts"></script>
+  </body>
+</html>
