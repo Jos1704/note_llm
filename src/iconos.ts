@@ -46,5 +46,12 @@ export const icono = {
   ),
   rayo: svg('<path d="M13 2 4.09 12.11a.5.5 0 0 0 .38.83H11l-1 9 8.91-10.11a.5.5 0 0 0-.38-.83H13Z"/>'),
   atras: svg('<path d="m15 18-6-6 6-6"/>'),
+  tarea: svg('<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/>'),
+  historial: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'),
+  enfoque: svg('<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/><circle cx="12" cy="12" r="2.5"/>'),
+  grafo: svg('<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="9" cy="18" r="3"/><path d="M8.2 7.2 15.6 7.7M7 8.4l1.4 6.7M16.6 10l-5.6 6.2"/>'),
+  enlace: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+  abajo: svg('<path d="m6 9 6 6 6-6"/>'),
+  plantilla: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>'),
   archivo: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/>'),
 };

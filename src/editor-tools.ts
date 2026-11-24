@@ -1,4 +1,4 @@
-import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { Decoration, EditorView, MatchDecorator, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { EditorSelection, EditorState, type Extension } from "@codemirror/state";
 import { type Completion, type CompletionContext, type CompletionSource } from "@codemirror/autocomplete";
 import { api } from "./api";
@@ -35,16 +35,18 @@ const opciones: Completion[] = [
   { label: "Regla horizontal", detail: "---", type: "keyword", apply: "---" },
 ];
 
-/** Menú de inserciones que se abre al escribir `/` al inicio de una línea. */
-export function slashCommands(): CompletionSource {
-  return (ctx: CompletionContext) => {
+/** Menú de inserciones que se abre al escribir `/` al inicio de una línea. `extra` añade opciones
+ * que dependen de la nota (p. ej. plantillas). */
+export function slashCommands(extra?: () => Promise<Completion[]>): CompletionSource {
+  return async (ctx: CompletionContext) => {
     const { state, pos } = ctx;
     if (state.facet(EditorState.readOnly)) return null;
     const line = state.doc.lineAt(pos);
     const antes = line.text.slice(0, pos - line.from);
     if (!antes.startsWith("/")) return null;
     const q = antes.slice(1).toLowerCase();
-    const options = opciones.filter((o) => o.label.toLowerCase().includes(q) || o.detail?.includes(q));
+    const todas = extra ? [...opciones, ...(await extra().catch(() => []))] : opciones;
+    const options = todas.filter((o) => o.label.toLowerCase().includes(q) || o.detail?.toLowerCase().includes(q));
     if (!options.length) return null;
     // `filter: false`: el filtrado ya se hizo arriba (CodeMirror compararía «/…» con las etiquetas y no quedaría nada).
     return { from: line.from, options, filter: false };
@@ -283,4 +285,76 @@ export function pegarEnlace(): Extension {
       return true;
     },
   });
+}
+
+// ------------------------------------------------------------------ enlaces [[…]]
+
+export interface DestinoEnlace {
+  titulo: string;
+  /** Texto gris a la derecha (p. ej. el proyecto). */
+  detalle: string;
+}
+
+/** Autocompletado de títulos al escribir `[[`. */
+export function wikilinkCompletion(fuente: () => DestinoEnlace[]): CompletionSource {
+  return (ctx: CompletionContext) => {
+    const linea = ctx.state.doc.lineAt(ctx.pos);
+    const antes = linea.text.slice(0, ctx.pos - linea.from);
+    const m = /\[\[([^[\]|#\n]*)$/.exec(antes);
+    if (!m) return null;
+    const cierra = linea.text.slice(ctx.pos - linea.from).startsWith("]]");
+    const options: Completion[] = fuente().map((n) => ({
+      label: n.titulo,
+      detail: n.detalle,
+      type: "text",
+      apply: (view, _c, from, to) => {
+        const insertar = cierra ? n.titulo : `${n.titulo}]]`;
+        // El cursor queda después de `]]`.
+        const fin = from + n.titulo.length + 2;
+        view.dispatch({ changes: { from, to, insert: insertar }, selection: EditorSelection.single(fin) });
+      },
+    }));
+    return { from: ctx.pos - m[1].length, options, validFor: /^[^[\]|#\n]*$/ };
+  };
+}
+
+const RE_WIKILINK = /\[\[([^[\]\n]+)\]\]/g;
+
+const decoradorWikilinks = new MatchDecorator({
+  regexp: RE_WIKILINK,
+  decoration: Decoration.mark({ class: "cm-wikilink" }),
+});
+
+/** Resalta los `[[…]]` y los abre con ⌘/Ctrl + clic. */
+export function wikilinks(abrir: (dentro: string) => void): Extension {
+  const resaltado = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = decoradorWikilinks.createDeco(view);
+      }
+      update(u: ViewUpdate) {
+        this.decorations = decoradorWikilinks.updateDeco(u, this.decorations);
+      }
+    },
+    { decorations: (v) => v.decorations },
+  );
+  const clic = EditorView.domEventHandlers({
+    mousedown(e, view) {
+      if (!(e.metaKey || e.ctrlKey) || e.button !== 0) return false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos == null) return false;
+      const linea = view.state.doc.lineAt(pos);
+      const col = pos - linea.from;
+      for (const m of linea.text.matchAll(RE_WIKILINK)) {
+        if (col >= m.index && col <= m.index + m[0].length) {
+          e.preventDefault();
+          abrir(m[1]);
+          return true;
+        }
+      }
+      return false;
+    },
+  });
+  return [resaltado, clic];
 }

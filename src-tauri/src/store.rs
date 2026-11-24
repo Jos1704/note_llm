@@ -152,6 +152,27 @@ impl Store {
         self.leer(&self.ruta(id)?)
     }
 
+    /// Todas las notas con su cuerpo (para enlaces, tareas y búsquedas que miran el contenido).
+    pub fn notas_completas(&self) -> Result<Vec<Nota>> {
+        let mut out = Vec::new();
+        for path in self.archivos()? {
+            match self.leer(&path) {
+                Ok(n) => out.push(n),
+                Err(e) => eprintln!("omitiendo {}: {e:#}", path.display()),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Rutas de todos los `.md` de los proyectos de este lugar.
+    pub fn archivos(&self) -> Result<Vec<PathBuf>> {
+        let mut out = Vec::new();
+        for dir in self.dirs_proyecto()? {
+            out.extend(archivos_md(&dir)?);
+        }
+        Ok(out)
+    }
+
     /// Ids de las notas que contienen `aguja` (ya en minúsculas).
     pub fn buscar(&self, aguja: &str) -> Result<Vec<String>> {
         let mut ids = Vec::new();
@@ -307,7 +328,7 @@ impl Store {
         Ok(self.raiz.join(rel_path))
     }
 
-    fn id_de(&self, path: &Path) -> String {
+    pub fn id_de(&self, path: &Path) -> String {
         let rel = path.strip_prefix(&self.raiz).unwrap_or(path);
         let rel = rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
         format!("{}:{rel}", self.lugar.prefijo())
@@ -382,7 +403,7 @@ impl Store {
         Ok(dir)
     }
 
-    fn a_papelera(&self, path: &Path) -> Result<()> {
+    pub fn a_papelera(&self, path: &Path) -> Result<()> {
         let papelera = self.raiz.join(PAPELERA);
         fs::create_dir_all(&papelera)?;
         let marca = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());

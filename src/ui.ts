@@ -1,4 +1,5 @@
-import type { Estado, Lugar } from "./api";
+import { api, imagenAdjunta, type Estado, type Lugar } from "./api";
+import { autocompletarPrefijos, type FuentePrefijos } from "./prefijos";
 import { icono } from "./iconos";
 // Piezas de interfaz reutilizables: menús, diálogos y avisos (sin diálogos nativos).
 
@@ -82,7 +83,7 @@ export function panelFlotante(junto: HTMLElement, el: HTMLElement, alCerrar?: ()
   return cerrar;
 }
 
-function dialogo(html: string): { el: HTMLElement; cerrar: () => void; alCerrar: Promise<void> } {
+export function dialogo(html: string): { el: HTMLElement; cerrar: () => void; alCerrar: Promise<void> } {
   const fondo = document.createElement("div");
   fondo.className = "fondo";
   const el = document.createElement("div");
@@ -232,13 +233,55 @@ export function opcionesProyecto(estado: Estado): string {
 }
 
 /** Diálogo de captura rápida: título, texto y proyecto. `inicial` repone lo escrito si guardar falló. */
-export function pedirNotaRapida(opciones: string, inicial?: NotaRapida): Promise<NotaRapida | null> {
+/** Fuente del autocompletado de `#etiqueta` / `@proyecto` a partir del estado de la biblioteca. */
+export const fuentePrefijos = (estado: Estado | null) => (): FuentePrefijos => ({
+  proyectos: estado?.proyectos ?? [],
+  etiquetas: estado?.etiquetas.map((e) => e.nombre) ?? [],
+});
+
+/** Inserta texto en la posición del cursor de un campo. */
+export function insertarEnCursor(campo: HTMLTextAreaElement | HTMLInputElement, texto: string) {
+  const ini = campo.selectionStart ?? campo.value.length;
+  const fin = campo.selectionEnd ?? ini;
+  campo.value = campo.value.slice(0, ini) + texto + campo.value.slice(fin);
+  const pos = ini + texto.length;
+  campo.setSelectionRange(pos, pos);
+  campo.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Bloque Markdown separado por líneas en blanco del texto que lo rodea. */
+export function comoBloque(campo: HTMLTextAreaElement, bloque: string): string {
+  const antes = campo.value.slice(0, campo.selectionStart ?? campo.value.length);
+  const pre = !antes || antes.endsWith("\n\n") ? "" : antes.endsWith("\n") ? "\n" : "\n\n";
+  return `${pre}${bloque}\n\n`;
+}
+
+/** Pegar una imagen en un textarea: se guarda como adjunto temporal y se inserta su Markdown. */
+export function pegarImagenes(campo: HTMLTextAreaElement, alError: (e: unknown) => void) {
+  campo.addEventListener("paste", async (e) => {
+    const archivos = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    if (!archivos.length) return;
+    e.preventDefault();
+    for (const f of archivos) {
+      try {
+        const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+        const nombre = await api.guardarTemporal(new Uint8Array(await f.arrayBuffer()), ext);
+        insertarEnCursor(campo, comoBloque(campo, imagenAdjunta(nombre)));
+      } catch (err) {
+        alError(err);
+      }
+    }
+  });
+}
+
+export function pedirNotaRapida(opciones: string, inicial?: NotaRapida, fuente?: () => FuentePrefijos): Promise<NotaRapida | null> {
   return new Promise((resolve) => {
     let resultado: NotaRapida | null = null;
     const { el, cerrar, alCerrar } = dialogo(`
       <div class="dialogo-cab"><span class="dialogo-ico">${icono.mas}</span><h3>Nota rápida</h3></div>
       <input class="campo titular" data-c="titulo" placeholder="Título (opcional)" spellcheck="false">
-      <textarea class="campo area" data-c="cuerpo" placeholder="Escribe en Markdown…" spellcheck="false"></textarea>
+      <textarea class="campo area" data-c="cuerpo" placeholder="Escribe en Markdown… (#etiqueta o @proyecto en la primera línea)" spellcheck="false"></textarea>
+      <div class="sugerencias" hidden></div>
       <div class="botones">
         <select class="campo izq" data-c="proyecto" title="Proyecto">${opciones}</select>
         <button class="sec" data-r="no">Cancelar</button><button class="pri" data-r="si">Guardar</button>
@@ -248,6 +291,12 @@ export function pedirNotaRapida(opciones: string, inicial?: NotaRapida): Promise
     const titulo = el.querySelector<HTMLInputElement>('[data-c="titulo"]')!;
     const cuerpo = el.querySelector<HTMLTextAreaElement>('[data-c="cuerpo"]')!;
     const proyecto = el.querySelector<HTMLSelectElement>('[data-c="proyecto"]')!;
+    const sugerencias = el.querySelector<HTMLDivElement>(".sugerencias")!;
+    if (fuente) {
+      autocompletarPrefijos(titulo, sugerencias, fuente);
+      autocompletarPrefijos(cuerpo, sugerencias, fuente);
+    }
+    pegarImagenes(cuerpo, (e) => aviso(mensajeError(e), true));
     if (inicial) {
       titulo.value = inicial.titulo;
       cuerpo.value = inicial.cuerpo;

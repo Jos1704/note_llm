@@ -1,14 +1,19 @@
 import "./tema";
 import "./estilos.css";
 import { listen } from "@tauri-apps/api/event";
-import { api, crearNotaRapida, normalizarEtiqueta, type ArchivoExterno, type Estado, type Lugar, type NotaResumen, type Proyecto } from "./api";
+import { abrirGrafo } from "./grafo";
+import { abrirVersiones } from "./versiones";
+import { api, crearNotaRapida, normalizarEtiqueta, type ArchivoExterno, type Entrante, type Estado, type Lugar, type NotaResumen, type Plantilla, type Proyecto, type Relacionada, type Tarea } from "./api";
+import type { Completion } from "@codemirror/autocomplete";
+import { crearResolutor, fechaHoy, partirWikilink, rellenar, slug, tituloDePlantilla, type Resolutor } from "./enlaces";
 import { crearEditor } from "./editor";
 import { icono } from "./iconos";
-import { aviso, confirmar, editarEtiqueta, esc, menu, mensajeError, opcionesProyecto, panelFlotante, pedirNotaRapida, pedirTexto } from "./ui";
-import { renderizar } from "./vista-previa";
+import { aviso, confirmar, editarEtiqueta, esc, fuentePrefijos, menu, mensajeError, opcionesProyecto, panelFlotante, pedirNotaRapida, pedirTexto } from "./ui";
+import { ponerCarpeta, ponerResolutor, dibujarDiagramas, renderizar } from "./vista-previa";
 import { MODOS, PALETAS, cambiarTema, temaActual } from "./tema";
 
-type Vista = { tipo: "todas" } | { tipo: "proyecto"; id: string } | { tipo: "etiqueta"; nombre: string };
+type Vista = { tipo: "todas" } | { tipo: "proyecto"; id: string } | { tipo: "etiqueta"; nombre: string } | { tipo: "tareas" };
+type FiltroTareas = "pendientes" | "hoy" | "atrasadas" | "sin-fecha" | "hechas";
 type Modo = "editar" | "dividido" | "vista";
 
 interface Actual {
@@ -19,6 +24,8 @@ interface Actual {
   modificado: number;
   hoja: string | null;
   pauta: string | null;
+  /** Título al abrir la nota (o tras actualizar sus enlaces): para ofrecer renombrar los `[[…]]`. */
+  tituloOriginal: string;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -41,6 +48,8 @@ const el = {
   paneles: $("paneles"),
   vista: $("vista"),
   guardado: $("guardado"),
+  relaciones: $("relaciones"),
+  grafo: $("grafo"),
 };
 
 let estado: Estado = { equipo: "", disco: null, proyectos: [], etiquetas: [], notas: [], paleta: [] };
@@ -54,6 +63,14 @@ let guardando: Promise<void> | null = null;
 let modo: Modo = (leerAjuste("modo") as Modo) ?? "dividido";
 let lectura: ArchivoExterno | null = null;
 let lateral: "abierta" | "iconos" | "fija" = (leerAjuste("lateral") as "abierta" | "iconos" | "fija") ?? "abierta";
+let tareas: Tarea[] = [];
+let filtroTareas: FiltroTareas = (leerAjuste("filtro-tareas") as FiltroTareas) ?? "pendientes";
+let resolver: Resolutor = () => null;
+let entrantes: Entrante[] = [];
+/** Notas parecidas (índice TF‑IDF), sin las que ya enlazan o están enlazadas. */
+let parecidas: Relacionada[] = [];
+/** Vista «Grafo» abierta (capa sobre la lista y el editor). */
+let grafo: ReturnType<typeof abrirGrafo> | null = null;
 
 // ------------------------------------------------------------------ utilidades
 
@@ -120,10 +137,11 @@ function fallo(e: unknown) {
 
 async function refrescar() {
   try {
-    estado = await api.estado();
+    [estado, tareas] = await Promise.all([api.estado(), api.tareas().catch(() => tareas)]);
   } catch (e) {
     return fallo(e);
   }
+  resolver = crearResolutor(estado.notas);
   // Si la vista apunta a algo que ya no existe (p. ej. se desconectó el disco), volver a «Todas».
   if (vista.tipo === "proyecto" && !proyectoPorId(vista.id)) vista = { tipo: "todas" };
   if (vista.tipo === "etiqueta" && !estado.etiquetas.some((e) => e.nombre === (vista as { nombre: string }).nombre)) {
@@ -139,7 +157,19 @@ async function refrescar() {
     }
   }
   pintarTodo();
+  if (actual) cargarEnlaces(actual.id);
+  grafo?.recargar();
 }
+
+const recargarTareas = debounce(async () => {
+  try {
+    tareas = await api.tareas();
+  } catch {
+    return;
+  }
+  pintarLateral();
+  if (vista.tipo === "tareas") pintarLista();
+}, 700);
 
 function pintarTodo() {
   pintarLateral();
@@ -272,6 +302,12 @@ function pintarLateral() {
       <div class="fila ${vista.tipo === "todas" ? "activa" : ""}" data-accion="ver-todas">
         ${icono.notas}<span class="nombre">Todas las notas</span><span class="cuenta">${estado.notas.length}</span>
       </div>
+      <div class="fila ${vista.tipo === "tareas" ? "activa" : ""}" data-accion="ver-tareas" title="Tareas de todas las notas">
+        ${icono.tarea}<span class="nombre">Tareas</span><span class="cuenta">${tareas.filter((t) => !t.hecha).length || ""}</span>
+      </div>
+      <div class="fila ${grafo ? "activa" : ""}" data-accion="ver-grafo" title="Mapa de proyectos y notas">
+        ${icono.grafo}<span class="nombre">Grafo</span>
+      </div>
       <div class="seccion">Proyectos</div>
       ${grupoLugar("disco")}
       ${grupoLugar("equipo")}
@@ -287,10 +323,18 @@ el.lateral.addEventListener("click", async (ev) => {
   const { accion, id, nombre, lugar } = objetivo.dataset;
   switch (accion) {
     case "ver-todas":
+      cerrarGrafo();
       return cambiarVista({ tipo: "todas" });
+    case "ver-tareas":
+      cerrarGrafo();
+      return cambiarVista({ tipo: "tareas" });
+    case "ver-grafo":
+      return grafo ? cerrarGrafo() : abrirVistaGrafo();
     case "ver-proyecto":
+      cerrarGrafo();
       return cambiarVista({ tipo: "proyecto", id: id! });
     case "ver-etiqueta":
+      cerrarGrafo();
       return cambiarVista({ tipo: "etiqueta", nombre: nombre! });
     case "menu-proyecto":
       return menuProyecto(objetivo, id!);
@@ -334,8 +378,10 @@ el.lateral.addEventListener("contextmenu", (ev) => {
 
 function cambiarVista(v: Vista) {
   vista = v;
+  el.filtro.placeholder = v.tipo === "tareas" ? "Filtrar tareas" : "Filtrar";
   pintarLateral();
   pintarLista();
+  if (v.tipo === "tareas") recargarTareas();
 }
 
 function menuProyecto(junto: HTMLElement | { x: number; y: number }, id: string) {
@@ -550,12 +596,13 @@ function notasVisibles(): NotaResumen[] {
 }
 
 function pintarLista() {
+  if (vista.tipo === "tareas") return pintarTareas();
   const titulo =
     vista.tipo === "todas"
       ? "Todas las notas"
       : vista.tipo === "proyecto"
         ? (proyectoPorId(vista.id)?.nombre ?? "Proyecto")
-        : `#${vista.nombre}`;
+        : `#${(vista as { nombre: string }).nombre}`;
   el.listaTitulo.textContent = titulo;
 
   const ns = notasVisibles();
@@ -578,6 +625,7 @@ function pintarLista() {
 }
 
 el.notas.addEventListener("click", (ev) => {
+  if (vista.tipo === "tareas") return clicEnTareas(ev);
   const item = (ev.target as HTMLElement).closest<HTMLElement>(".item");
   if (!item) return;
   if (item.dataset.id !== actual?.id) abrirNota(item.dataset.id!);
@@ -594,6 +642,135 @@ el.notas.addEventListener("contextmenu", (ev) => {
     { texto: "Mover a la papelera", icono: icono.basura, peligro: true, accion: () => borrarNota(id) },
   ]);
 });
+
+// ------------------------------------------------------------------ tareas
+
+const FILTROS_TAREAS: { valor: FiltroTareas; nombre: string }[] = [
+  { valor: "pendientes", nombre: "Pendientes" },
+  { valor: "hoy", nombre: "Hoy" },
+  { valor: "atrasadas", nombre: "Atrasadas" },
+  { valor: "sin-fecha", nombre: "Sin fecha" },
+  { valor: "hechas", nombre: "Hechas" },
+];
+
+function cumpleFiltro(t: Tarea, f: FiltroTareas, hoy: string): boolean {
+  switch (f) {
+    case "pendientes":
+      return !t.hecha;
+    case "hoy":
+      return !t.hecha && t.fecha === hoy;
+    case "atrasadas":
+      return !t.hecha && !!t.fecha && t.fecha < hoy;
+    case "sin-fecha":
+      return !t.hecha && !t.fecha;
+    case "hechas":
+      return t.hecha;
+  }
+}
+
+const formatoDia = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
+function textoFecha(fecha: string, hoy: string): string {
+  const dias = Math.round((Date.parse(fecha) - Date.parse(hoy)) / 86_400_000);
+  if (dias === 0) return "Hoy";
+  if (dias === 1) return "Mañana";
+  if (dias === -1) return "Ayer";
+  const [a, m, d] = fecha.split("-").map(Number);
+  return formatoDia.format(new Date(a, m - 1, d));
+}
+
+function pintarTareas() {
+  el.listaTitulo.textContent = "Tareas";
+  const hoy = fechaHoy();
+  const cuantas = (f: FiltroTareas) => tareas.filter((t) => cumpleFiltro(t, f, hoy)).length;
+  const filtros = `<div class="filtros-tareas">${FILTROS_TAREAS.map((f) => {
+    const n = cuantas(f.valor);
+    return `<button class="filtro-tarea ${f.valor === filtroTareas ? "activo" : ""} ${f.valor === "atrasadas" && n ? "aviso" : ""}" data-filtro="${f.valor}">${f.nombre}${n ? ` <span>${n}</span>` : ""}</button>`;
+  }).join("")}</div>`;
+
+  const f = filtro.toLowerCase();
+  const visibles = tareas
+    .filter((t) => cumpleFiltro(t, filtroTareas, hoy))
+    .filter((t) => !f || t.texto.toLowerCase().includes(f) || t.titulo.toLowerCase().includes(f));
+  if (!visibles.length) {
+    const vacio = filtro
+      ? "Ninguna tarea coincide con el filtro."
+      : filtroTareas === "hechas"
+        ? "Todavía no has completado tareas."
+        : "No hay tareas aquí.<br>Escribe <code>- [ ] algo</code> en cualquier nota; añade <code>@2026-12-01</code> para darle fecha.";
+    el.notas.innerHTML = `${filtros}<p class="lista-vacia">${vacio}</p>`;
+    return;
+  }
+  // Agrupadas por proyecto; dentro, primero las que tienen fecha (más próxima primero).
+  const grupos = new Map<string, Tarea[]>();
+  for (const t of visibles) grupos.set(t.proyecto, [...(grupos.get(t.proyecto) ?? []), t]);
+  const nombreProyecto = (id: string) => proyectoPorId(id)?.nombre ?? id;
+  const orden = [...grupos.keys()].sort((a, b) => nombreProyecto(a).localeCompare(nombreProyecto(b), "es"));
+  const html = orden
+    .map((p) => {
+      const ts = grupos.get(p)!.sort(
+        (a, b) =>
+          (a.fecha ?? "9999").localeCompare(b.fecha ?? "9999") || a.titulo.localeCompare(b.titulo, "es") || a.linea - b.linea,
+      );
+      const items = ts
+        .map((t) => {
+          const clase = !t.fecha || t.hecha ? "" : t.fecha < hoy ? "atrasada" : t.fecha === hoy ? "hoy" : "";
+          const fecha = t.fecha ? `<span class="tarea-fecha ${clase}">${textoFecha(t.fecha, hoy)}</span>` : "";
+          return `<div class="tarea-item ${t.hecha ? "hecha" : ""} ${actual?.id === t.id ? "de-actual" : ""}" data-id="${esc(t.id)}" data-linea="${t.linea}">
+            <input type="checkbox" class="casilla-tarea" ${t.hecha ? "checked" : ""} title="${t.hecha ? "Desmarcar" : "Completar"}">
+            <span class="tarea-cuerpo"><span class="tarea-texto">${esc(t.texto) || "<i>Sin texto</i>"}</span>
+            <span class="tarea-meta">${fecha}<span class="tarea-nota">${esc(t.titulo)}</span></span></span>
+          </div>`;
+        })
+        .join("");
+      return `<div class="grupo-tareas"><div class="grupo-tareas-cab">${esc(nombreProyecto(p))}<span>${ts.length}</span></div>${items}</div>`;
+    })
+    .join("");
+  el.notas.innerHTML = filtros + html;
+}
+
+async function clicEnTareas(ev: MouseEvent) {
+  const objetivo = ev.target as HTMLElement;
+  const boton = objetivo.closest<HTMLElement>("[data-filtro]");
+  if (boton) {
+    filtroTareas = boton.dataset.filtro as FiltroTareas;
+    guardarAjuste("filtro-tareas", filtroTareas);
+    return pintarTareas();
+  }
+  const item = objetivo.closest<HTMLElement>(".tarea-item");
+  if (!item) return;
+  const id = item.dataset.id!;
+  const linea = Number(item.dataset.linea);
+  const t = tareas.find((x) => x.id === id && x.linea === linea);
+  if (!t) return;
+  if (objetivo.classList.contains("casilla-tarea")) {
+    ev.preventDefault();
+    return marcarTarea(t);
+  }
+  if (actual?.id !== id) await abrirNota(id);
+  editor.irALinea(linea);
+}
+
+async function marcarTarea(t: Tarea) {
+  const hecha = !t.hecha;
+  // La nota abierta se cambia en el editor (así no se pisan cambios sin guardar).
+  if (actual?.id === t.id && !lectura) {
+    editor.alternarTarea(t.linea);
+    t.hecha = hecha;
+    pintarTareas();
+    return;
+  }
+  try {
+    const r = await api.marcarTarea(t.id, t.linea, t.texto, hecha);
+    t.hecha = hecha;
+    estado.notas = estado.notas.map((n) => (n.id === r.id ? r : n));
+    pintarLateral();
+    pintarTareas();
+    if (hecha) aviso("Tarea completada");
+  } catch (e) {
+    fallo(e);
+    recargarTareas();
+  }
+}
 
 const buscarEnContenido = debounce(async (texto: string) => {
   if (!texto) return;
@@ -617,8 +794,14 @@ el.filtro.addEventListener("input", () => {
 
 // ------------------------------------------------------------------ editor
 
+/** Pinta Markdown en la vista previa y dibuja después los diagramas (Mermaid se carga solo si hay). */
+function pintarHtmlVista(markdown: string) {
+  el.vista.innerHTML = renderizar(markdown);
+  dibujarDiagramas(el.vista);
+}
+
 const pintarVistaPrevia = debounce(() => {
-  if (modo !== "editar") el.vista.innerHTML = renderizar(editor.texto());
+  if (modo !== "editar") pintarHtmlVista(editor.texto());
 }, 120);
 
 let cargando = false;
@@ -634,10 +817,223 @@ const editor = crearEditor(
     const v = el.vista;
     v.scrollTop = fraccion * (v.scrollHeight - v.clientHeight);
   },
+  {
+    destinos: () =>
+      estado.notas
+        .filter((n) => n.id !== actual?.id)
+        .map((n) => ({ titulo: n.titulo, detalle: proyectoPorId(n.proyecto)?.nombre ?? "" })),
+    abrirEnlace: (dentro) => abrirWikilink(partirWikilink(dentro).destino),
+    extraSlash: opcionesPlantillaSlash,
+    adjuntar: adjuntarArchivos,
+  },
 );
+
+/** Archivos pegados o soltados en el editor → `assets/` junto a la nota. Devuelve su Markdown. */
+async function adjuntarArchivos(archivos: File[]): Promise<string[]> {
+  if (!actual || lectura) return [];
+  const id = actual.id;
+  const out: string[] = [];
+  for (const f of archivos) {
+    try {
+      const ruta = await api.adjuntarArchivo(id, f);
+      const nombre = (f.name || ruta.split("/").pop() || "archivo").replace(/\.[^.]+$/, "");
+      const destino = /\s/.test(ruta) ? `<${ruta}>` : ruta;
+      const esImagen = f.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|avif|heic)$/i.test(ruta);
+      out.push(esImagen ? `![${nombre}](${destino})` : `[${nombre}](${destino})`);
+    } catch (e) {
+      fallo(e);
+    }
+  }
+  if (out.length) aviso(out.length === 1 ? "Adjunto guardado en assets/" : `${out.length} adjuntos guardados en assets/`);
+  return out;
+}
+
+// Los `[[…]]` de la vista previa se pintan atenuados si no llevan a ninguna nota.
+ponerResolutor((destino) => !!resolver(destino, actual?.proyecto));
+
+/** Abre la nota a la que apunta un `[[destino]]`; si no existe, la crea en el proyecto actual. */
+async function abrirWikilink(destino: string) {
+  if (!destino) return;
+  const id = resolver(destino, actual?.proyecto);
+  if (id) return abrirNota(id);
+  await guardar();
+  try {
+    const n = await api.crearNota(actual?.proyecto ?? null, []);
+    await api.guardarNota(n.id, destino, [], null, null, "");
+    await refrescar();
+    const nueva = resolver(destino, actual?.proyecto);
+    if (nueva) await abrirNota(nueva, false);
+    aviso(`Nota «${destino}» creada`);
+    editor.view.focus();
+  } catch (e) {
+    fallo(e);
+  }
+}
+
+// ------------------------------------------------------------------ grafo
+
+/** Similitud mínima para dibujar «parecidas» (el grafo filtra además por encima de esto). */
+const UMBRAL_GRAFO = 0.12;
+function abrirVistaGrafo() {
+  if (grafo) return;
+  el.grafo.hidden = false;
+  grafo = abrirGrafo(el.grafo, {
+    cargar: async () => {
+      const g = await api.grafo(UMBRAL_GRAFO);
+      return { proyectos: estado.proyectos, notas: estado.notas, etiquetas: estado.etiquetas, paleta: estado.paleta, ...g };
+    },
+    abrir: async (id) => {
+      cerrarGrafo();
+      await abrirNota(id);
+    },
+    cerrar: cerrarGrafo,
+    nombreProyecto: (id) => proyectoPorId(id)?.nombre ?? "",
+  });
+  pintarLateral();
+}
+
+function cerrarGrafo() {
+  if (!grafo) return;
+  grafo.destruir();
+  grafo = null;
+  el.grafo.hidden = true;
+  pintarLateral();
+}
+
+// ------------------------------------------------------------------ enlazan aquí
+
+const cargarEnlaces = debounce(async (id: string) => {
+  const [e, r] = await Promise.all([api.enlaces(id).catch(() => null), api.relacionadas(id).catch(() => [])]);
+  if (actual?.id !== id) return;
+  entrantes = e?.entrantes ?? [];
+  const ya = new Set([...entrantes.map((x) => x.id), ...(e?.salientes ?? []).map((x) => x.id)]);
+  parecidas = r.filter((x) => !ya.has(x.id)).slice(0, 4);
+  pintarRelaciones();
+}, 150);
+
+function pintarRelaciones() {
+  if (!actual || lectura || (!entrantes.length && !parecidas.length)) {
+    el.relaciones.hidden = true;
+    return;
+  }
+  const plegado = leerAjuste("relaciones-plegado") === "1";
+  el.relaciones.hidden = false;
+  el.relaciones.classList.toggle("plegado", plegado);
+  const de = (proyecto: string) =>
+    proyecto !== actual!.proyecto ? `<span class="de">${esc(proyectoPorId(proyecto)?.nombre ?? "")}</span>` : "";
+  const enlazan = entrantes
+    .map((e) => {
+      // El contexto con el `[[…]]` resaltado.
+      const ctx = esc(e.contexto).replace(/\[\[([^\]]+)\]\]/g, "<mark>$1</mark>");
+      return `<button class="relacion" data-id="${esc(e.id)}" data-linea="${e.linea}">
+        <span class="relacion-titulo">${esc(e.titulo)}${de(e.proyecto)}</span><span class="relacion-contexto">${ctx}</span></button>`;
+    })
+    .join("");
+  const parecen = parecidas
+    .map(
+      (r) => `<button class="relacion" data-id="${esc(r.id)}">
+        <span class="relacion-titulo">${esc(r.titulo || "Sin título")}${de(r.proyecto)}</span>
+        <span class="relacion-contexto">Comparten ${r.terminos.map((t) => `<mark>${esc(t)}</mark>`).join(", ")}</span></button>`,
+    )
+    .join("");
+  const titulo = entrantes.length ? "Enlazan aquí" : "Notas parecidas";
+  const sub = (t: string, n: number) => (entrantes.length && parecidas.length ? `<h4 class="relaciones-sub">${t} <span>${n}</span></h4>` : "");
+  el.relaciones.innerHTML = `
+    <button class="relaciones-cab" data-accion="plegar">${icono.enlace}<span>${entrantes.length && parecidas.length ? "Relaciones" : titulo}</span><span class="cuenta">${entrantes.length + parecidas.length}</span>${icono.abajo}</button>
+    <div class="relaciones-lista">${entrantes.length ? sub("Enlazan aquí", entrantes.length) + enlazan : ""}${parecidas.length ? sub("Notas parecidas", parecidas.length) + parecen : ""}</div>`;
+}
+
+el.relaciones.addEventListener("click", async (ev) => {
+  const t = ev.target as HTMLElement;
+  if (t.closest('[data-accion="plegar"]')) {
+    const plegado = !el.relaciones.classList.contains("plegado");
+    guardarAjuste("relaciones-plegado", plegado ? "1" : "0");
+    el.relaciones.classList.toggle("plegado", plegado);
+    return;
+  }
+  const r = t.closest<HTMLElement>(".relacion");
+  if (!r) return;
+  await abrirNota(r.dataset.id!);
+  if (r.dataset.linea) editor.irALinea(Number(r.dataset.linea));
+});
+
+// ------------------------------------------------------------------ plantillas
+
+let cachePlantillas: { proyecto: string | null; cuando: number; lista: Plantilla[] } | null = null;
+
+async function plantillasDe(proyecto: string | null): Promise<Plantilla[]> {
+  if (cachePlantillas && cachePlantillas.proyecto === proyecto && Date.now() - cachePlantillas.cuando < 15_000) {
+    return cachePlantillas.lista;
+  }
+  const lista = await api.plantillas(proyecto);
+  cachePlantillas = { proyecto, cuando: Date.now(), lista };
+  return lista;
+}
+
+const nombreDeProyecto = (id: string | null) => (id ? (proyectoPorId(id)?.nombre ?? "") : "Bandeja");
+
+/** Opciones «Plantilla: …» del menú `/`: insertan el cuerpo de la plantilla en la línea. */
+async function opcionesPlantillaSlash(): Promise<Completion[]> {
+  if (!actual) return [];
+  const lista = await plantillasDe(actual.proyecto);
+  return lista.map((p) => ({
+    label: `Plantilla: ${p.nombre}`,
+    detail: "plantilla",
+    type: "text",
+    apply: (view, _c, from, to) => {
+      const { texto, cursor } = rellenar(p.cuerpo, { proyecto: nombreDeProyecto(actual?.proyecto ?? null), titulo: actual?.titulo ?? "" });
+      view.dispatch({ changes: { from, to, insert: texto } });
+      editor.cursorEn(from + (cursor ?? texto.length));
+    },
+  }));
+}
+
+async function menuPlantillas(boton: HTMLElement) {
+  const proyecto = vista.tipo === "proyecto" ? vista.id : null;
+  let lista: Plantilla[] = [];
+  try {
+    lista = await plantillasDe(proyecto);
+  } catch (e) {
+    return fallo(e);
+  }
+  menu(boton, [
+    ...lista.map((p) => ({
+      texto: p.nombre,
+      icono: icono.plantilla,
+      accion: () => nuevaNotaDesdePlantilla(p, proyecto),
+    })),
+    ...(proyecto
+      ? [{ texto: "Plantillas de este proyecto…", icono: icono.abrirCarpeta, accion: () => api.abrirPlantillas(proyecto).catch(fallo) }]
+      : []),
+    { texto: "Carpeta de plantillas…", icono: icono.abrirCarpeta, accion: () => api.abrirPlantillas(null).catch(fallo) },
+  ]);
+}
+
+async function nuevaNotaDesdePlantilla(p: Plantilla, proyecto: string | null) {
+  await guardar();
+  const nombre = nombreDeProyecto(proyecto);
+  const titulo = tituloDePlantilla(p, nombre);
+  const { texto, cursor } = rellenar(p.cuerpo, { proyecto: nombre, titulo });
+  const etiquetas = [...new Set([...(vista.tipo === "etiqueta" ? [vista.nombre] : []), ...p.etiquetas])];
+  try {
+    const n = await api.crearNota(proyecto, etiquetas);
+    const r = await api.guardarNota(n.id, titulo || "Sin título", n.etiquetas, null, null, texto);
+    filtro = "";
+    el.filtro.value = "";
+    cachePlantillas = null;
+    await refrescar();
+    await abrirNota(r.id, false);
+    if (!titulo) el.titulo.focus();
+    else editor.cursorEn(cursor ?? texto.length);
+  } catch (e) {
+    fallo(e);
+  }
+}
 
 async function abrirNota(id: string, guardarAntes = true) {
   if (guardarAntes) await guardar();
+  // Historial: al dejar una nota, instantánea si cambió desde la última.
+  if (actual && actual.id !== id && !lectura) api.instantanea(actual.id).catch(() => {});
   let nota;
   try {
     nota = await api.leerNota(id);
@@ -645,7 +1041,24 @@ async function abrirNota(id: string, guardarAntes = true) {
     return fallo(e);
   }
   lectura = null;
-  actual = { id: nota.id, proyecto: nota.proyecto, titulo: nota.titulo, etiquetas: nota.etiquetas, modificado: nota.modificado, hoja: hojaValida(nota.hoja), pauta: pautaValida(nota.pauta) };
+  ponerCarpeta(await api.carpetaNota(nota.id).catch(() => null));
+  const mismaNota = actual?.id === nota.id;
+  actual = {
+    id: nota.id,
+    proyecto: nota.proyecto,
+    titulo: nota.titulo,
+    etiquetas: nota.etiquetas,
+    modificado: nota.modificado,
+    hoja: hojaValida(nota.hoja),
+    pauta: pautaValida(nota.pauta),
+    tituloOriginal: mismaNota && actual ? actual.tituloOriginal : nota.titulo,
+  };
+  if (!mismaNota) {
+    entrantes = [];
+    parecidas = [];
+    pintarRelaciones();
+  }
+  cargarEnlaces(nota.id);
   sucio = false;
   etiquetasCambiaron = false;
   cargando = true;
@@ -656,7 +1069,7 @@ async function abrirNota(id: string, guardarAntes = true) {
   el.meta.hidden = false;
   el.btnHoja.hidden = false;
   aplicarHoja(actual.hoja, actual.pauta);
-  el.vista.innerHTML = renderizar(nota.cuerpo);
+  pintarHtmlVista(nota.cuerpo);
   el.vista.scrollTop = 0;
   el.editor.hidden = false;
   el.vacio.hidden = true;
@@ -667,9 +1080,14 @@ async function abrirNota(id: string, guardarAntes = true) {
 }
 
 function cerrarNota() {
+  if (el.app.dataset.enfoque !== undefined) alternarEnfoque(false);
+  if (actual && !lectura) api.instantanea(actual.id).catch(() => {});
   actual = null;
   lectura = null;
   sucio = false;
+  entrantes = [];
+  parecidas = [];
+  pintarRelaciones();
   el.editor.hidden = true;
   el.vacio.hidden = false;
   delete el.app.dataset.nota;
@@ -690,14 +1108,18 @@ async function abrirArchivoExterno() {
   sucio = false;
   etiquetasCambiaron = false;
   cargando = true;
+  ponerCarpeta(null);
   editor.poner(archivo.cuerpo, true);
   cargando = false;
+  entrantes = [];
+  parecidas = [];
+  pintarRelaciones();
   el.titulo.value = archivo.titulo;
   el.titulo.readOnly = true;
   el.meta.hidden = true;
   el.btnHoja.hidden = true;
   aplicarHoja(null, null);
-  el.vista.innerHTML = renderizar(archivo.cuerpo);
+  pintarHtmlVista(archivo.cuerpo);
   el.vista.scrollTop = 0;
   el.editor.hidden = false;
   el.vacio.hidden = true;
@@ -773,6 +1195,8 @@ async function guardar(): Promise<void> {
         pintarLista();
       }
       if (!sucio) estadoGuardado("Guardado");
+      recargarTareas();
+      if (r.id !== id) resolver = crearResolutor(estado.notas);
     } catch (e) {
       sucio = true;
       etiquetasCambiaron ||= conEtiquetas;
@@ -802,17 +1226,17 @@ async function nuevaNota(proyecto: string | null = vista.tipo === "proyecto" ? v
 
 /** Captura rápida sin salir de lo que estás haciendo: crea la nota y sigue en la nota actual. */
 async function notaRapida() {
-  let r = await pedirNotaRapida(opcionesProyecto(estado));
+  let r = await pedirNotaRapida(opcionesProyecto(estado), undefined, fuentePrefijos(estado));
   while (r) {
     await guardar();
     try {
-      const titulo = await crearNotaRapida(r, vista.tipo === "etiqueta" ? [vista.nombre] : []);
+      const titulo = await crearNotaRapida(r, vista.tipo === "etiqueta" ? [vista.nombre] : [], estado.proyectos);
       await refrescar();
       aviso(`Nota «${titulo}» guardada`);
       return;
     } catch (e) {
       fallo(e);
-      r = await pedirNotaRapida(opcionesProyecto(estado), r); // no perder lo escrito
+      r = await pedirNotaRapida(opcionesProyecto(estado), r, fuentePrefijos(estado)); // no perder lo escrito
     }
   }
 }
@@ -849,6 +1273,45 @@ el.titulo.addEventListener("keydown", (e) => {
     editor.view.focus();
   }
 });
+el.titulo.addEventListener("change", () => ofrecerRenombrarEnlaces());
+
+/** Si cambió el título, ofrece cambiar los `[[título viejo]]` de todas las notas. */
+async function ofrecerRenombrarEnlaces() {
+  if (!actual || lectura) return;
+  const nota = actual;
+  const viejo = nota.tituloOriginal;
+  const nuevo = nota.titulo.trim();
+  if (!nuevo || slug(viejo) === slug(nuevo)) return;
+  await guardar();
+  let n = 0;
+  try {
+    n = await api.contarEnlaces(viejo);
+  } catch {
+    return;
+  }
+  // Ya no hay enlaces que actualizar con el título viejo: el nuevo es el de referencia.
+  if (!n) {
+    nota.tituloOriginal = nuevo;
+    return;
+  }
+  const ok = await confirmar({
+    titulo: "¿Actualizar los enlaces?",
+    texto: `Hay ${n} ${n === 1 ? "enlace" : "enlaces"} <code>[[${esc(viejo)}]]</code> en tus notas. ¿Cambiarlos a <code>[[${esc(nuevo)}]]</code>?`,
+    boton: "Actualizar",
+  });
+  nota.tituloOriginal = nuevo;
+  if (!ok) return;
+  try {
+    await guardar();
+    const cambiadas = await api.renombrarEnlaces(viejo, nuevo);
+    sucio = false;
+    await refrescar();
+    if (actual) await abrirNota(actual.id, false);
+    aviso(`Enlaces actualizados en ${cambiadas} ${cambiadas === 1 ? "nota" : "notas"}`);
+  } catch (e) {
+    fallo(e);
+  }
+}
 
 el.proyecto.addEventListener("change", async () => {
   if (!actual) return;
@@ -922,11 +1385,17 @@ el.vista.addEventListener("click", (e) => {
     return;
   }
   const a = objetivo.closest("a");
+  if (a?.dataset.wikilink !== undefined) {
+    e.preventDefault();
+    abrirWikilink(a.dataset.wikilink);
+    return;
+  }
   if (a) {
     e.preventDefault();
     const href = a.getAttribute("href") ?? "";
     if (/^(https?:|mailto:)/.test(href)) api.abrirUrl(href).catch(fallo);
     else if (href.startsWith("#")) el.vista.querySelector(decodeURIComponent(href))?.scrollIntoView();
+    else if (href && actual && !/^[a-z][a-z0-9+.-]*:/i.test(href)) api.abrirAdjunto(actual.id, href).catch(fallo); // archivo relativo
   }
 });
 
@@ -937,7 +1406,7 @@ function ponerModo(m: Modo) {
   guardarAjuste("modo", m);
   el.paneles.dataset.modo = m;
   document.querySelectorAll<HTMLButtonElement>(".modos button").forEach((b) => b.classList.toggle("activo", b.dataset.modo === m));
-  if (m !== "editar") el.vista.innerHTML = renderizar(editor.texto());
+  if (m !== "editar") pintarHtmlVista(editor.texto());
 }
 
 const botonesModo: Record<Modo, string> = { editar: icono.lapiz, dividido: icono.columnas, vista: icono.ojo };
@@ -949,6 +1418,8 @@ document.querySelectorAll<HTMLButtonElement>(".modos button").forEach((b) => {
 
 $("btn-nueva").innerHTML = icono.nueva;
 $("btn-nueva").onclick = () => nuevaNota();
+$("btn-plantilla").innerHTML = icono.plantilla;
+$("btn-plantilla").onclick = (e) => menuPlantillas(e.currentTarget as HTMLElement);
 $("btn-carpeta").innerHTML = icono.abrirCarpeta;
 $("btn-carpeta").onclick = () => actual && api.abrirCarpeta(actual.id).catch(fallo);
 $("btn-borrar").innerHTML = icono.basura;
@@ -957,6 +1428,30 @@ $("filtro-icono").innerHTML = icono.buscar;
 el.btnHoja.innerHTML = icono.hoja;
 el.btnHoja.onclick = abrirSelectorHoja;
 $("btn-volver").innerHTML = icono.atras;
+$("btn-enfoque").innerHTML = icono.enfoque;
+$("btn-versiones").innerHTML = icono.historial;
+$("btn-versiones").onclick = async () => {
+  if (!actual || lectura) return;
+  await guardar();
+  const nota = actual;
+  if (await abrirVersiones(nota.id, nota.titulo, editor.texto())) {
+    await refrescar();
+    await abrirNota(nota.id, false);
+    aviso("Versión restaurada");
+  }
+};
+$("btn-enfoque").onclick = () => alternarEnfoque();
+
+/** Modo enfoque: solo el texto, centrado, con el párrafo actual resaltado. `Esc` sale. */
+function alternarEnfoque(activo = el.app.dataset.enfoque === undefined) {
+  if (activo && !actual) return;
+  if (activo) {
+    el.app.dataset.enfoque = "";
+    if (modo === "vista") ponerModo("editar");
+  } else delete el.app.dataset.enfoque;
+  editor.enfoque(activo);
+  if (activo) editor.view.focus();
+}
 $("btn-volver").onclick = () => {
   guardar();
   delete el.app.dataset.nota;
@@ -965,9 +1460,16 @@ $("btn-volver").onclick = () => {
 // ------------------------------------------------------------------ atajos y ciclo de vida
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && el.app.dataset.enfoque !== undefined && !e.defaultPrevented && !document.querySelector(".dialogo, .menu")) {
+    alternarEnfoque(false);
+    return;
+  }
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === "n" && e.shiftKey) {
+  if (k === "f" && e.shiftKey) {
+    e.preventDefault();
+    alternarEnfoque();
+  } else if (k === "n" && e.shiftKey) {
     e.preventDefault();
     notaRapida();
   } else if (k === "n") {

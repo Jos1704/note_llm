@@ -5,7 +5,7 @@ import "./estilos.css";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { api, crearNotaRapida, type Estado } from "./api";
-import { aviso, mensajeError, opcionesProyecto, pedirNotaRapida, type NotaRapida } from "./ui";
+import { aviso, fuentePrefijos, mensajeError, opcionesProyecto, pedirNotaRapida, type NotaRapida } from "./ui";
 
 const cerrar = () => invoke("cerrar_rapida").catch(() => window.close());
 
@@ -20,10 +20,10 @@ async function iniciar() {
 
   let inicial: NotaRapida | undefined;
   for (;;) {
-    const r = await pedirNotaRapida(opciones, inicial);
+    const r = await pedirNotaRapida(opciones, inicial, fuentePrefijos(estado));
     if (!r) return cerrar();
     try {
-      await crearNotaRapida(r);
+      await crearNotaRapida(r, [], estado?.proyectos ?? []);
       await emit("notas-cambiaron").catch(() => {});
       return cerrar();
     } catch (e) {

@@ -92,6 +92,15 @@ pub fn serializar(
 }
 
 /// Devuelve (cabecera, cuerpo) si el texto empieza con un bloque `---`.
+/// Número de líneas del archivo antes del cuerpo (front matter incluido). Sirve para pasar de
+/// una línea del cuerpo a una línea del archivo.
+pub fn lineas_antes_del_cuerpo(texto: &str) -> usize {
+    match separar(texto) {
+        Some((_, cuerpo)) => texto[..texto.len() - cuerpo.len()].matches('\n').count(),
+        None => 0,
+    }
+}
+
 fn separar(texto: &str) -> Option<(&str, &str)> {
     let resto = texto.strip_prefix("---\n").or_else(|| texto.strip_prefix("---\r\n"))?;
     let mut pos = 0;
