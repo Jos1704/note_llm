@@ -1,9 +1,9 @@
 /* =====================================================================
    Notas — sistema «Sereno»
-   Tres paletas (Bruma, Lavanda, Marea), cada una en claro y oscuro.
+   Cinco paletas (Bruma, Lavanda, Marea, EVA-01, Vidrio), cada una en claro y oscuro.
    Cada paleta define solo sus semillas (--l-* claro, --d-* oscuro);
    el resto de tokens se deriva de ellas, así todas se ven coherentes.
-     <html data-paleta="bruma|lavanda|marea" data-theme="light|dark">
+     <html data-paleta="bruma|lavanda|marea|eva|vidrio" data-theme="light|dark">
    (sin data-theme = sigue al sistema)
    ===================================================================== */
 
@@ -74,6 +74,50 @@
   --d-acento: #86b4ce;
   --d-acento-suave: #1f3240;
   --d-acento-texto: #0e1e28;
+}
+
+:root[data-paleta="eva"] {
+  /* EVA-01: morado, verde neón y naranja de alerta (más detalles al final del archivo) */
+  --l-fondo: #e7e0f4;
+  --l-barra: #ddd3ef;
+  --l-superficie: #fbf9ff;
+  --l-texto: #1c1430;
+  --l-suave: #554a72;
+  --l-suave-2: #a196bd;
+  --l-acento: #3a6f00;
+  --l-acento-suave: #e2f2cc;
+  --d-fondo: #0e0a17;
+  --d-barra: #120c20;
+  --d-activo: #24183d;
+  --d-superficie: #161026;
+  --d-texto: #f1ecff;
+  --d-suave: #b6abd6;
+  --d-suave-2: #6e5f96;
+  --d-acento: #9cff3a;
+  --d-acento-suave: #24301d;
+  --d-acento-texto: #0e0a17;
+}
+
+:root[data-paleta="vidrio"] {
+  /* Vidrio: paneles translúcidos sobre manchas de color (más al final del archivo) */
+  --l-fondo: #eef1f7;
+  --l-barra: #e6eaf2;
+  --l-superficie: #ffffff;
+  --l-texto: #1d2230;
+  --l-suave: #535b70;
+  --l-suave-2: #a3aabb;
+  --l-acento: #2a63c4;
+  --l-acento-suave: #dde8fb;
+  --d-fondo: #151926;
+  --d-barra: #10131c;
+  --d-activo: #232a3a;
+  --d-superficie: #1a1f2c;
+  --d-texto: #eef1f8;
+  --d-suave: #a6aec0;
+  --d-suave-2: #5f6880;
+  --d-acento: #8fb8ff;
+  --d-acento-suave: #1f2b44;
+  --d-acento-texto: #0b1426;
 }
 
 /* ------------------------------------------------------------ tokens: claro */
@@ -1695,6 +1739,30 @@ kbd {
   width: min(580px, calc(100vw - 32px));
 }
 
+/* Sugerencias de #etiqueta / @proyecto en la nota rápida */
+.sugerencias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sugerencias[hidden] {
+  display: none;
+}
+.sugerencia {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--acento-suave);
+  color: var(--acento);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sugerencia:first-child {
+  box-shadow: inset 0 0 0 1px var(--acento);
+}
+
 @keyframes fundido {
   from {
     opacity: 0;
@@ -1878,4 +1946,761 @@ body.ventana-rapida {
   height: auto;
   min-height: 0;
   resize: none;
+}
+
+/* ------------------------------------------------------------------ fase 2: enlaces, tareas, plantillas */
+
+.lista-acciones {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#btn-plantilla {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-m);
+  color: var(--suave);
+}
+#btn-plantilla:hover {
+  background: var(--bg-hover);
+  color: var(--texto);
+}
+
+/* Enlaces [[…]] */
+.md a.wikilink {
+  color: var(--acento);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--acento) 35%, transparent);
+  cursor: pointer;
+}
+.md a.wikilink:hover {
+  border-bottom-color: var(--acento);
+}
+.md a.wikilink.rota {
+  color: var(--suave);
+  border-bottom-style: dashed;
+  border-bottom-color: var(--suave-2);
+}
+.cm-wikilink {
+  color: var(--acento);
+  background: var(--acento-suave);
+  border-radius: 4px;
+}
+
+/* Enlazan aquí */
+.relaciones {
+  flex: none;
+  max-height: 32%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--borde);
+  min-height: 0;
+}
+.relaciones[hidden] {
+  display: none;
+}
+.relaciones-cab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 32px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--suave);
+  text-align: left;
+}
+.relaciones-cab:hover {
+  color: var(--texto);
+}
+.relaciones-cab .ico {
+  width: 14px;
+  height: 14px;
+}
+.relaciones-cab .cuenta {
+  font-weight: 500;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--campo-suave);
+}
+.relaciones-cab .ico:last-child {
+  margin-left: auto;
+  transition: transform var(--t);
+}
+.relaciones.plegado .relaciones-cab .ico:last-child {
+  transform: rotate(-90deg);
+}
+.relaciones.plegado .relaciones-lista {
+  display: none;
+}
+.relaciones-lista {
+  overflow-y: auto;
+  padding: 0 20px 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px;
+}
+.relacion {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
+  border-radius: var(--r-m);
+  background: var(--campo-suave);
+  text-align: left;
+  transition: background var(--t);
+}
+.relacion:hover {
+  background: var(--bg-hover);
+}
+.relacion-titulo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--serif);
+  font-size: 14.5px;
+  font-weight: 500;
+}
+.relacion-titulo .de {
+  font-family: var(--sans);
+  font-size: 11.5px;
+}
+.relacion-contexto {
+  font-size: 12.5px;
+  color: var(--suave);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.5;
+}
+.relaciones-sub {
+  grid-column: 1 / -1;
+  margin: 6px 12px 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--suave);
+}
+.relaciones-sub:first-child {
+  margin-top: 0;
+}
+.relaciones-sub span {
+  opacity: 0.7;
+}
+.relacion-contexto mark {
+  background: none;
+  color: var(--acento);
+  font-weight: 500;
+}
+
+/* Vista de tareas */
+.filtros-tareas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px 10px;
+}
+.filtro-tarea {
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--suave);
+  background: var(--campo-suave);
+  transition:
+    background var(--t),
+    color var(--t);
+}
+.filtro-tarea span {
+  opacity: 0.75;
+  margin-left: 2px;
+}
+.filtro-tarea:hover {
+  color: var(--texto);
+}
+.filtro-tarea.activo {
+  background: var(--acento);
+  color: var(--acento-texto);
+}
+.filtro-tarea.aviso:not(.activo) {
+  color: var(--peligro);
+}
+.grupo-tareas {
+  margin-bottom: 10px;
+}
+.grupo-tareas-cab {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--suave);
+}
+.tarea-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background var(--t);
+}
+.tarea-item:hover {
+  background: var(--bg-hover);
+}
+.tarea-item.de-actual {
+  box-shadow: inset 2px 0 0 var(--acento);
+}
+.casilla-tarea {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  accent-color: var(--acento);
+  cursor: pointer;
+}
+.tarea-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.tarea-texto {
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.tarea-item.hecha .tarea-texto {
+  color: var(--suave);
+  text-decoration: line-through;
+}
+.tarea-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--suave);
+  min-width: 0;
+}
+.tarea-nota {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tarea-fecha {
+  flex: none;
+  font-weight: 500;
+}
+.tarea-fecha.hoy {
+  color: var(--acento);
+}
+.tarea-fecha.atrasada {
+  color: var(--peligro);
+}
+
+/* Vista «Grafo»: capa sobre la lista y el editor */
+.grafo {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  position: relative;
+  z-index: 5;
+  overflow: hidden;
+  background: var(--bg);
+  animation: aparecer-grafo 0.2s ease-out;
+}
+.grafo[hidden] {
+  display: none;
+}
+@keyframes aparecer-grafo {
+  from {
+    opacity: 0;
+  }
+}
+.grafo-lienzo {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+.grafo-barra {
+  position: absolute;
+  inset: 14px 16px auto 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.grafo-barra > * {
+  pointer-events: auto;
+}
+.grafo-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.grafo-chip,
+.grafo-sel,
+.grafo-buscar,
+.grafo-cerrar {
+  height: 28px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--superficie);
+  color: var(--suave);
+  font: inherit;
+  font-size: 12px;
+  box-shadow: var(--sombra-suave);
+}
+.grafo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  cursor: pointer;
+  transition:
+    color var(--t),
+    background var(--t);
+}
+.grafo-chip.activo {
+  color: var(--texto);
+}
+.grafo-chip:not(.activo) .muestra {
+  opacity: 0.3;
+}
+.grafo-chip .muestra {
+  width: 16px;
+  height: 0;
+  border-top: 2px solid currentColor;
+}
+.grafo-chip .muestra.punteada {
+  border-top-style: dashed;
+}
+.grafo-chip .muestra.fina {
+  border-top-width: 1px;
+}
+.grafo-chip .muestra.tenue {
+  opacity: 0.4;
+}
+.grafo-sel {
+  padding: 0 10px;
+  cursor: pointer;
+}
+.grafo-buscar {
+  width: 190px;
+  padding: 0 12px;
+  color: var(--texto);
+  outline: none;
+  transition: border-color var(--t);
+}
+.grafo-buscar:focus {
+  border-color: var(--acento);
+}
+.grafo-buscar.sin-resultado {
+  border-color: #e07a6f;
+}
+.grafo-cerrar {
+  width: 28px;
+  padding: 0;
+  cursor: pointer;
+}
+.grafo-cerrar:hover,
+.grafo-chip:hover {
+  color: var(--texto);
+}
+.grafo-ayuda {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  font-size: 11.5px;
+  color: var(--suave);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.grafo-ficha {
+  position: absolute;
+  width: 280px;
+  padding: 14px 16px;
+  border: 1px solid var(--borde);
+  border-radius: var(--r-m);
+  background: var(--superficie);
+  box-shadow: var(--sombra);
+  font-size: 13px;
+}
+.grafo-ficha[hidden] {
+  display: none;
+}
+.grafo-ficha-titulo {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.grafo-ficha-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--suave);
+}
+.grafo-ficha-meta i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.grafo-ficha p {
+  margin: 10px 0 0;
+  color: var(--suave);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.grafo-ficha-etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--acento);
+}
+.grafo-ficha-abrir {
+  margin-top: 12px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--acento);
+  color: var(--acento-texto);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .grafo {
+    grid-column: 1 / -1;
+  }
+  .grafo-buscar {
+    width: 130px;
+  }
+}
+
+/* Fórmulas (KaTeX) y diagramas (Mermaid) en la vista previa */
+.md .formula {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.md .katex {
+  font-size: 1.08em;
+}
+.md .diagrama {
+  margin: 1.2em 0;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+.md .diagrama svg {
+  max-width: 100%;
+  height: auto;
+}
+.md .diagrama[data-mermaid] pre {
+  width: 100%;
+  opacity: 0.55;
+}
+.md .diagrama-error pre {
+  opacity: 1;
+  box-shadow: inset 3px 0 0 #e07a6f;
+}
+
+/* Modo enfoque (⇧⌘F): solo el texto, centrado; las líneas fuera del párrafo se atenúan */
+#app[data-enfoque] {
+  grid-template-columns: 0 0 minmax(0, 1fr);
+}
+#app[data-enfoque] .lateral,
+#app[data-enfoque] .lista,
+#app[data-enfoque] .relaciones,
+#app[data-enfoque] .meta {
+  display: none;
+}
+#app[data-enfoque] .editor {
+  box-shadow: none;
+  background-color: transparent;
+}
+#app[data-enfoque] .barra {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+#app[data-enfoque] .barra:hover,
+#app[data-enfoque] .barra:focus-within {
+  opacity: 1;
+}
+#app[data-enfoque] .titulo,
+#app[data-enfoque] .paneles[data-modo="editar"] .cm-content {
+  max-width: 70ch;
+  margin-inline: auto;
+  width: 100%;
+}
+#app[data-enfoque] .titulo {
+  display: block;
+  box-sizing: border-box;
+  padding-inline: 6px;
+}
+.cm-atenuada {
+  opacity: 0.32;
+  transition: opacity 0.18s ease;
+}
+#btn-enfoque[aria-pressed="true"],
+#app[data-enfoque] #btn-enfoque {
+  color: var(--acento);
+}
+
+/* Panel «Versiones» */
+.dialogo.dialogo-versiones {
+  width: min(1100px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+}
+.versiones-cab {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.versiones-nota {
+  color: var(--suave);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.versiones-cuerpo {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px;
+}
+.versiones-lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.versiones-lista button {
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--suave);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.versiones-lista button:hover {
+  background: var(--bg-hover);
+  color: var(--texto);
+}
+.versiones-lista button.activa {
+  background: var(--acento-suave);
+  color: var(--texto);
+  font-weight: 500;
+}
+.versiones-diff {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--borde);
+  border-radius: var(--r-m);
+  overflow: hidden;
+}
+.versiones-leyenda {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--suave);
+  border-bottom: 1px solid var(--borde);
+}
+.versiones-leyenda span {
+  padding: 6px 12px;
+}
+.versiones-titulos {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--borde);
+}
+.versiones-titulos del {
+  color: #d0675c;
+}
+.versiones-titulos ins {
+  color: var(--acento);
+  text-decoration: none;
+}
+.versiones-merge {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font-size: 13px;
+}
+.versiones-merge .cm-mergeView {
+  height: 100%;
+}
+.versiones-merge .cm-editor {
+  background: transparent;
+}
+.versiones-vacio {
+  flex: 1;
+  color: var(--suave);
+}
+.dialogo-versiones .botones {
+  align-items: center;
+  margin-top: 14px;
+}
+.versiones-ayuda {
+  flex: 1;
+  font-size: 12px;
+  color: var(--suave);
+}
+.versiones-ayuda.aviso-restaurar {
+  color: var(--texto);
+}
+
+/* =====================================================================
+   Tarjetas flotantes (todas las paletas)
+   Barra lateral, lista y hoja son tarjetas con borde y esquinas redondeadas,
+   separadas por un hueco sobre el fondo de la ventana.
+   ===================================================================== */
+
+#app {
+  --hueco: 12px;
+  padding: var(--hueco);
+  column-gap: var(--hueco);
+  background: var(--bg-lateral);
+}
+.lateral,
+.lista,
+.grafo {
+  border-radius: var(--r-xl);
+  background: var(--bg);
+  box-shadow:
+    var(--sombra-suave),
+    0 0 0 1px var(--borde);
+  overflow: hidden;
+}
+.zona {
+  padding: 0;
+  background: transparent;
+}
+#app[data-lateral="iconos"] .lateral:hover {
+  inset: var(--hueco) auto var(--hueco) var(--hueco);
+  box-shadow:
+    var(--sombra),
+    0 0 0 1px var(--borde);
+}
+#app[data-enfoque] {
+  column-gap: 0;
+  background: var(--bg);
+}
+
+/* =====================================================================
+   Extras de EVA-01 (colores sólidos) y Vidrio
+   Vidrio pinta formas detrás de la ventana y vuelve translúcidos la
+   barra lateral, la lista y la hoja «automática» (las hojas Papel, Arena
+   y Pizarra siguen opacas). light-dark() elige el color según el modo
+   (el color-scheme que fija cada bloque de tokens).
+   Van al final para ganar a los bloques de modo con igual especificidad.
+   ===================================================================== */
+
+:root[data-paleta="eva"] {
+  --h2: light-dark(#a34200, #ffa865);
+  --h3: light-dark(#5a32b0, #ccb2ff);
+  --display: "Oswald Variable", Oswald, var(--sans);
+}
+
+:root[data-paleta="vidrio"] {
+  --fx-1: light-dark(#8fd8c1, #2f6f8f);
+  --fx-2: light-dark(#cf9cf3, #7a449f);
+  --fx-3: light-dark(#ffbf9b, #b8683f);
+  --cristal: light-dark(rgba(255, 255, 255, 0.58), rgba(28, 30, 42, 0.55));
+  --cristal-panel: light-dark(rgba(255, 255, 255, 0.36), rgba(18, 20, 30, 0.42));
+  --cristal-borde: light-dark(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.14));
+  --cristal-brillo: light-dark(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.12));
+  --desenfoque: 30px;
+  --r-s: 10px;
+  --r-m: 14px;
+  --r-l: 20px;
+  --r-xl: 26px;
+}
+
+/* Fondo: el lienzo (html) lleva el color; body queda transparente para que las
+   formas (z-index -1) se pinten entre ambos. La ventana de nota rápida no las lleva. */
+:root[data-paleta="vidrio"] body:not(.ventana-rapida),
+:root[data-paleta="vidrio"] #app,
+:root[data-paleta="vidrio"] .zona {
+  background: transparent;
+}
+
+:root[data-paleta="vidrio"] body:not(.ventana-rapida)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 70% at 12% 22%, var(--fx-1), transparent 70%),
+    radial-gradient(50% 65% at 88% 18%, var(--fx-2), transparent 70%),
+    radial-gradient(65% 70% at 60% 100%, var(--fx-3), transparent 70%);
+}
+
+/* Paneles de vidrio */
+:root[data-paleta="vidrio"] :is(.lateral, .lista) {
+  background: var(--cristal-panel);
+  -webkit-backdrop-filter: blur(var(--desenfoque)) saturate(150%);
+  backdrop-filter: blur(var(--desenfoque)) saturate(150%);
+  box-shadow:
+    inset 0 0 0 1px var(--cristal-borde),
+    inset 0 1px 0 var(--cristal-brillo),
+    var(--sombra-suave);
+}
+:root[data-paleta="vidrio"] .editor[data-hoja="auto"] {
+  background-color: var(--cristal);
+  -webkit-backdrop-filter: blur(var(--desenfoque)) saturate(160%);
+  backdrop-filter: blur(var(--desenfoque)) saturate(160%);
+  box-shadow:
+    inset 0 0 0 1px var(--cristal-borde),
+    inset 0 1px 0 var(--cristal-brillo),
+    var(--sombra-suave);
+}
+
+/* EVA-01: franja de peligro, títulos gruesos y rótulos condensados */
+:root[data-paleta="eva"] .editor::before {
+  content: "";
+  flex: none;
+  height: 5px;
+  opacity: 0.8;
+  background: repeating-linear-gradient(-45deg, #ff7a1a 0 8px, transparent 8px 16px);
+}
+:root[data-paleta="eva"] .titulo {
+  font-weight: 900;
+  letter-spacing: -0.015em;
+}
+:root[data-paleta="eva"] .lista-cab h2 {
+  font-weight: 800;
+}
+:root[data-paleta="eva"] :is(.seccion, .panel-titulo) {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
 }

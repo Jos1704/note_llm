@@ -32,6 +32,13 @@ StartupWMClass=md-notes
 DESKTOP
     update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     echo "✔ Instalada en ~/.local/bin/md-notes (búscala como «Notas» en el lanzador)"
+    # Panel de nota rápida en el borde superior (Quickshell), equivalente al widget del notch.
+    install -Dm644 linux/quickshell/notas/shell.qml "$HOME/.config/quickshell/notas/shell.qml"
+    if command -v qs >/dev/null; then
+      echo "✔ Panel instalado en ~/.config/quickshell/notas (arráncalo con: qs -c notas -d)"
+    else
+      echo "ℹ Panel copiado a ~/.config/quickshell/notas; instala Quickshell para usarlo"
+    fi
     ;;
   *)
     echo "Sistema no soportado: $(uname -s)" >&2

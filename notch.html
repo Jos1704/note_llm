@@ -3,8 +3,60 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Notas</title>
+    <title>Notas — notch</title>
     <style>
+      /* Colores: los de la paleta y el modo de la app (data-paleta / data-theme, que pone
+         src/tema.ts). light-dark() elige según color-scheme: el modo fijo o el del sistema. */
+      :root {
+        --notch-ancho: 200px;
+        --notch-alto: 32px;
+        --curva: cubic-bezier(0.22, 1, 0.36, 1);
+        --radio: 24px;
+        color-scheme: light dark;
+        --p-fondo: light-dark(#f6f7f4, #171c1a);
+        --p-texto: light-dark(#2b322e, #e4e9e5);
+        --p-acento: light-dark(#3f6b5b, #8ec1ab);
+        --p-sobre: light-dark(#ffffff, #10221b);
+        --texto: var(--p-texto);
+        --tenue: color-mix(in srgb, var(--p-texto) 62%, transparent);
+        --campo: color-mix(in srgb, var(--p-texto) 7%, transparent);
+        --campo-foco: color-mix(in srgb, var(--p-texto) 11%, transparent);
+        --borde: color-mix(in srgb, var(--p-texto) 14%, transparent);
+        --acento: var(--p-acento);
+        --error: light-dark(#b4533f, #f08a7e);
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+      }
+      :root[data-paleta="lavanda"] {
+        --p-fondo: light-dark(#f7f6fa, #1a1820);
+        --p-texto: light-dark(#2e2b38, #e7e4ee);
+        --p-acento: light-dark(#5e5596, #aba3dc);
+        --p-sobre: light-dark(#ffffff, #1a1530);
+      }
+      :root[data-paleta="marea"] {
+        --p-fondo: light-dark(#f4f7f8, #161b1f);
+        --p-texto: light-dark(#26313a, #e2e8ec);
+        --p-acento: light-dark(#2f6680, #86b4ce);
+        --p-sobre: light-dark(#ffffff, #0e1e28);
+      }
+      :root[data-paleta="eva"] {
+        --p-fondo: light-dark(#f1ecfa, #161026);
+        --p-texto: light-dark(#1c1430, #f1ecff);
+        --p-acento: light-dark(#3a6f00, #9cff3a);
+        --p-sobre: light-dark(#ffffff, #0e0a17);
+        --borde: light-dark(rgba(91, 61, 153, 0.35), rgba(150, 115, 230, 0.45));
+      }
+      :root[data-paleta="vidrio"] {
+        --p-fondo: light-dark(rgba(250, 251, 255, 0.94), rgba(26, 30, 44, 0.93));
+        --p-texto: light-dark(#1d2230, #eef1f8);
+        --p-acento: light-dark(#2a63c4, #8fb8ff);
+        --p-sobre: light-dark(#ffffff, #0b1426);
+        --radio: 30px;
+      }
       html,
       body {
         margin: 0;
@@ -12,44 +64,287 @@
         background: transparent;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
+        font-family: "Inter Variable", -apple-system, system-ui, sans-serif;
+        font-size: 13px;
+        color: var(--texto);
+        user-select: none;
+        -webkit-user-select: none;
       }
-      body {
+
+      /* Plegado: mismo tamaño que el notch e invisible (negro sobre negro). Al abrir crece desde ahí. */
+      #panel {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: var(--notch-ancho);
+        height: var(--notch-alto);
+        background: #000;
+        border-radius: 0 0 12px 12px;
+        opacity: 0;
+        overflow: hidden;
+        box-sizing: border-box;
+        transition:
+          width 0.34s var(--curva),
+          height 0.34s var(--curva),
+          border-radius 0.34s var(--curva),
+          background 0.2s ease,
+          opacity 0.18s ease 0.16s;
+      }
+      #panel.abierto {
+        width: 100%;
+        height: 100%;
+        border-radius: 0 0 var(--radio) var(--radio);
+        background: var(--p-fondo);
+        box-shadow: inset 0 0 0 1px var(--borde);
+        opacity: 1;
+        transition:
+          width 0.38s var(--curva),
+          height 0.38s var(--curva),
+          border-radius 0.38s var(--curva),
+          background 0.3s ease 0.08s,
+          opacity 0.1s ease;
+      }
+      /* El hueco del notch sigue negro: el panel parece salir de él. */
+      #panel::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: var(--notch-ancho);
+        height: var(--notch-alto);
+        border-radius: 0 0 12px 12px;
+        background: #000;
+      }
+      /* EVA-01: franja de peligro y filo verde. */
+      :root[data-paleta="eva"] #panel.abierto {
+        box-shadow:
+          inset 0 0 0 1.5px var(--borde),
+          inset 0 -2px 0 var(--acento);
+      }
+      :root[data-paleta="eva"] #panel.abierto::after {
+        content: "";
+        position: absolute;
+        top: var(--notch-alto);
+        left: 0;
+        right: 0;
+        height: 4px;
+        opacity: 0.8;
+        background: repeating-linear-gradient(-45deg, #ff7a1a 0 8px, transparent 8px 16px);
+      }
+      /* Vidrio: tintes de color y filo de luz. */
+      :root[data-paleta="vidrio"] #panel.abierto {
+        background:
+          radial-gradient(70% 90% at 10% 100%, light-dark(rgba(127, 209, 184, 0.28), rgba(63, 182, 168, 0.22)), transparent 70%),
+          radial-gradient(60% 80% at 95% 90%, light-dark(rgba(197, 139, 240, 0.26), rgba(138, 79, 176, 0.26)), transparent 70%),
+          var(--p-fondo);
+        box-shadow:
+          inset 0 0 0 1px light-dark(rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.14)),
+          inset 0 -1px 0 light-dark(#ffffff, rgba(255, 255, 255, 0.22));
+      }
+
+      form {
+        position: absolute;
+        inset: 0;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+        flex-direction: column;
+        gap: 8px;
+        padding: calc(var(--notch-alto) + 8px) 18px 14px;
+        opacity: 0;
+        transform: translateY(-6px);
+        transition:
+          opacity 0.12s ease,
+          transform 0.12s ease;
       }
-      #notch {
+      #panel.abierto form {
+        opacity: 1;
+        transform: none;
+        transition:
+          opacity 0.22s ease 0.14s,
+          transform 0.3s var(--curva) 0.12s;
+      }
+
+      .fila {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      input,
+      textarea,
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      input,
+      textarea,
+      select {
+        background: var(--campo);
+        border: 1px solid transparent;
+        border-radius: 9px;
+        outline: none;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      input:focus,
+      textarea:focus,
+      select:focus {
+        background: var(--campo-foco);
+        border-color: var(--borde);
+      }
+      ::placeholder {
+        color: var(--tenue);
+      }
+      #titulo {
+        flex: 1;
+        min-width: 0;
+        padding: 7px 10px;
+        font-weight: 600;
+      }
+      #proyecto {
+        max-width: 150px;
+        padding: 7px 8px;
+        color: var(--tenue);
+        cursor: pointer;
+      }
+      #cuerpo {
+        flex: 1;
+        resize: none;
+        padding: 9px 10px;
+        line-height: 1.5;
+      }
+      footer {
         display: flex;
         align-items: center;
         gap: 8px;
-        height: 32px;
-        padding: 0 15px;
-        border-radius: 16px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(28, 28, 40, 0.72);
-        color: #fff;
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+      }
+      .acciones {
+        display: flex;
+        gap: 2px;
+      }
+      .accion {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--tenue);
         cursor: pointer;
-        user-select: none;
-        font-size: 13px;
+        transition:
+          background 0.15s,
+          color 0.15s;
+      }
+      .accion:hover {
+        background: var(--campo-foco);
+        color: var(--texto);
+      }
+      .accion:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      .accion svg {
+        width: 16px;
+        height: 16px;
+      }
+      #estado {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--tenue);
+        font-size: 11.5px;
+        transition: color 0.2s;
+      }
+      .sugerencias {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .sugerencias[hidden] {
+        display: none;
+      }
+      .sugerencia {
+        padding: 3px 10px;
+        border: 0;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--acento) 16%, transparent);
+        color: var(--acento);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .sugerencia:first-child {
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acento) 50%, transparent);
+      }
+      #estado.ok {
+        color: var(--acento);
+      }
+      #estado.error {
+        color: var(--error);
+      }
+      kbd {
+        font: inherit;
+        padding: 1px 5px;
+        border-radius: 5px;
+        background: var(--campo);
+      }
+      #guardar {
+        padding: 6px 14px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--acento);
+        color: var(--p-sobre);
         font-weight: 600;
-        letter-spacing: 0.2px;
+        cursor: pointer;
+        transition:
+          opacity 0.15s,
+          transform 0.1s;
       }
-      #notch:hover {
-        background: rgba(40, 40, 58, 0.82);
+      #guardar:hover {
+        opacity: 0.88;
       }
-      .plus {
-        font-size: 16px;
-        line-height: 1;
-        font-weight: 500;
+      #guardar:active {
+        transform: scale(0.97);
+      }
+      :root[data-paleta="eva"] #guardar {
+        font-family: "Oswald Variable", Oswald, sans-serif;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      #guardar:disabled {
+        opacity: 0.4;
+        cursor: default;
       }
     </style>
   </head>
   <body>
-    <button id="notch" title="Nota rápida"><span class="plus">+</span><span>Notas</span></button>
+    <div id="panel">
+      <form id="form" autocomplete="off">
+        <div class="fila">
+          <input id="titulo" placeholder="Título (opcional)" spellcheck="false" />
+          <select id="proyecto" title="Proyecto"><option value="">Bandeja</option></select>
+        </div>
+        <textarea id="cuerpo" placeholder="Escribe una nota rápida… (#etiqueta o @proyecto en la primera línea)"></textarea>
+        <div id="sugerencias" class="sugerencias" hidden></div>
+        <footer>
+          <div class="acciones">
+            <button type="button" class="accion" data-accion="portapapeles" title="Pegar el portapapeles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg></button>
+            <button type="button" class="accion" data-accion="pestana" title="Enlace de la pestaña del navegador"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></button>
+            <button type="button" class="accion" data-accion="seleccion" title="Texto seleccionado en la app anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2M9 19h6M12 5v14"/></svg></button>
+            <button type="button" class="accion" data-accion="captura" title="Captura de pantalla (con su texto)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></button>
+          </div>
+          <span id="estado"><kbd>⌘↩</kbd> guardar · <kbd>esc</kbd> cerrar</span>
+          <button id="guardar" type="submit">Guardar</button>
+        </footer>
+      </form>
+    </div>
     <script type="module" src="/src/notch.ts"></script>
   </body>
 </html>

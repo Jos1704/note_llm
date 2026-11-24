@@ -13,7 +13,10 @@
       <section class="lista">
         <header class="lista-cab">
           <h2 id="lista-titulo">Todas las notas</h2>
-          <button id="btn-nueva" class="icono-btn" title="Nueva nota (Ctrl+N)"></button>
+          <span class="lista-acciones">
+            <button id="btn-plantilla" class="icono-btn" title="Nueva nota desde plantilla"></button>
+            <button id="btn-nueva" class="icono-btn" title="Nueva nota (Ctrl+N)"></button>
+          </span>
         </header>
         <label class="filtro">
           <span id="filtro-icono"></span>
@@ -34,6 +37,8 @@
             </div>
             <span id="guardado" class="guardado"></span>
             <div class="acciones">
+              <button id="btn-versiones" class="icono-btn" title="Versiones anteriores"></button>
+              <button id="btn-enfoque" class="icono-btn" title="Modo enfoque (⇧⌘F)"></button>
               <button id="btn-hoja" class="icono-btn" title="Hoja y pauta"></button>
               <button id="btn-carpeta" class="icono-btn" title="Abrir carpeta"></button>
               <button id="btn-borrar" class="icono-btn" title="Mover a la papelera"></button>
@@ -50,8 +55,10 @@
             <div id="cm" class="panel-editor"></div>
             <article id="vista" class="panel-vista md"></article>
           </div>
+          <section id="relaciones" class="relaciones" hidden></section>
         </div>
       </main>
+      <section id="grafo" class="grafo" hidden></section>
     </div>
     <div id="capa"></div>
     <div id="aviso" class="aviso" role="status"></div>

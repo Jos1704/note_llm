@@ -1,13 +1,13 @@
-import { EditorView, keymap } from "@codemirror/view";
-import { EditorState, type Extension } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, keymap, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { Compartment, EditorSelection, EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { basicSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
-import { autocompletion } from "@codemirror/autocomplete";
+import { autocompletion, type Completion } from "@codemirror/autocomplete";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
-import { floatingToolbar, pegarEnlace, slashCommands } from "./editor-tools";
+import { floatingToolbar, pegarEnlace, slashCommands, wikilinkCompletion, wikilinks, type DestinoEnlace } from "./editor-tools";
 
 const resaltado = HighlightStyle.define([
   { tag: t.heading1, color: "var(--h1)", fontWeight: "700", fontSize: "1.45em" },
@@ -71,17 +71,118 @@ export interface Editor {
   texto(): string;
   /** Marca o desmarca la casilla `[ ]`/`[x]` de la línea (base 0). */
   alternarTarea(linea: number): void;
+  /** Lleva el cursor al inicio de la línea (base 0) y la centra en pantalla. */
+  irALinea(linea: number): void;
+  /** Pone el cursor en una posición del texto. */
+  cursorEn(pos: number): void;
+  /** Activa o quita la atenuación del modo enfoque. */
+  enfoque(activo: boolean): void;
 }
 
-export function crearEditor(padre: HTMLElement, alCambiar: () => void, alDesplazar: (fraccion: number) => void): Editor {
+/** Modo enfoque: atenúa las líneas fuera del párrafo donde está el cursor. */
+const atenuada = Decoration.line({ class: "cm-atenuada" });
+const parrafoActual = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.calcular(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.selectionSet || u.viewportChanged) this.decorations = this.calcular(u.view);
+    }
+    calcular(view: EditorView): DecorationSet {
+      const doc = view.state.doc;
+      const actual = doc.lineAt(view.state.selection.main.head).number;
+      // Párrafo: líneas seguidas con texto alrededor del cursor (una línea vacía lo corta).
+      let desde = actual;
+      let hasta = actual;
+      if (doc.line(actual).text.trim()) {
+        while (desde > 1 && doc.line(desde - 1).text.trim()) desde--;
+        while (hasta < doc.lines && doc.line(hasta + 1).text.trim()) hasta++;
+      }
+      const b = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
+          if (n < desde || n > hasta) b.add(doc.line(n).from, doc.line(n).from, atenuada);
+        }
+      }
+      return b.finish();
+    }
+  },
+  { decorations: (p) => p.decorations },
+);
+
+export interface OpcionesEditor {
+  /** Notas a las que se puede enlazar con `[[`. */
+  destinos: () => DestinoEnlace[];
+  /** ⌘/Ctrl + clic en un `[[…]]` (recibe lo que hay entre corchetes). */
+  abrirEnlace: (dentro: string) => void;
+  /** Opciones extra del menú `/` (plantillas). */
+  extraSlash: () => Promise<Completion[]>;
+  /** Archivos pegados o arrastrados: los guarda y devuelve el Markdown de cada uno. */
+  adjuntar: (archivos: File[]) => Promise<string[]>;
+}
+
+/** Pegar o soltar archivos en el editor: se guardan como adjuntos y se inserta su Markdown. */
+function archivosSoltados(adjuntar: OpcionesEditor["adjuntar"]): Extension {
+  const manejar = (view: EditorView, archivos: File[], pos: number) => {
+    adjuntar(archivos)
+      .then((trozos) => {
+        if (!trozos.length) return;
+        const p = Math.min(pos, view.state.doc.length);
+        const antes = view.state.doc.sliceString(Math.max(0, p - 2), p);
+        const pre = p === 0 || antes.endsWith("\n\n") ? "" : antes.endsWith("\n") ? "\n" : "\n\n";
+        const texto = `${pre}${trozos.join("\n\n")}\n\n`;
+        view.dispatch({ changes: { from: p, insert: texto }, selection: { anchor: p + texto.length }, userEvent: "input.paste" });
+        view.focus();
+      })
+      .catch(() => {});
+  };
+  return EditorView.domEventHandlers({
+    paste(event, view) {
+      const archivos = [...(event.clipboardData?.files ?? [])];
+      if (!archivos.length || view.state.facet(EditorState.readOnly)) return false;
+      event.preventDefault();
+      manejar(view, archivos, view.state.selection.main.head);
+      return true;
+    },
+    dragover(event) {
+      if (event.dataTransfer?.types.includes("Files")) {
+        event.preventDefault();
+        return true;
+      }
+      return false;
+    },
+    drop(event, view) {
+      const archivos = [...(event.dataTransfer?.files ?? [])];
+      if (!archivos.length || view.state.facet(EditorState.readOnly)) return false;
+      event.preventDefault();
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head;
+      manejar(view, archivos, view.state.doc.lineAt(pos).to);
+      return true;
+    },
+  });
+}
+
+export function crearEditor(
+  padre: HTMLElement,
+  alCambiar: () => void,
+  alDesplazar: (fraccion: number) => void,
+  opciones: OpcionesEditor,
+): Editor {
+  const compartimentoEnfoque = new Compartment();
+  let enfoqueActivo = false;
   const extensiones: Extension[] = [
+    compartimentoEnfoque.of([]),
     basicSetup,
     keymap.of([indentWithTab]),
     markdown({ base: markdownLanguage, codeLanguages: languages }),
     syntaxHighlighting(resaltado),
-    autocompletion({ override: [slashCommands()] }),
+    autocompletion({ override: [slashCommands(opciones.extraSlash), wikilinkCompletion(opciones.destinos)] }),
+    wikilinks(opciones.abrirEnlace),
     floatingToolbar(),
     pegarEnlace(),
+    archivosSoltados(opciones.adjuntar),
     EditorView.lineWrapping,
     tema,
     EditorView.updateListener.of((u) => {
@@ -103,8 +204,13 @@ export function crearEditor(padre: HTMLElement, alCambiar: () => void, alDesplaz
     poner(texto, soloLectura = false) {
       const ext = soloLectura ? [...extensiones, EditorState.readOnly.of(true), EditorView.editable.of(false)] : extensiones;
       view.setState(EditorState.create({ doc: texto, extensions: ext }));
+      if (enfoqueActivo) view.dispatch({ effects: compartimentoEnfoque.reconfigure(parrafoActual) });
     },
     texto: () => view.state.doc.toString(),
+    enfoque(activo) {
+      enfoqueActivo = activo;
+      view.dispatch({ effects: compartimentoEnfoque.reconfigure(activo ? parrafoActual : []) });
+    },
     alternarTarea(linea) {
       if (linea < 0 || linea >= view.state.doc.lines) return;
       const l = view.state.doc.line(linea + 1);
@@ -112,6 +218,17 @@ export function crearEditor(padre: HTMLElement, alCambiar: () => void, alDesplaz
       if (!m) return;
       const desde = l.from + m.index + 1;
       view.dispatch({ changes: { from: desde, to: desde + 1, insert: m[1] === " " ? "x" : " " } });
+    },
+    irALinea(linea) {
+      const n = Math.min(Math.max(linea, 0), view.state.doc.lines - 1);
+      const l = view.state.doc.line(n + 1);
+      view.dispatch({ selection: EditorSelection.single(l.from), effects: EditorView.scrollIntoView(l.from, { y: "center" }) });
+      view.focus();
+    },
+    cursorEn(pos) {
+      const p = Math.min(Math.max(pos, 0), view.state.doc.length);
+      view.dispatch({ selection: EditorSelection.single(p), effects: EditorView.scrollIntoView(p, { y: "center" }) });
+      view.focus();
     },
   };
 }

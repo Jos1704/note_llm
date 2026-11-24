@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::{adjuntos, historial, indice, plantillas, relaciones};
 use crate::store::{
     self, Lugar, MARCADOR, Nota, NotaResumen, Proyecto, Store, normalizar_etiqueta, normalizar_etiquetas,
 };
@@ -26,6 +27,9 @@ const COLOR_SIN_REGISTRO: &str = "#8a9799";
 struct Ajustes {
     /// Carpeta de notas del disco externo en este equipo.
     disco: Option<PathBuf>,
+    /// Atajo global de la nota rápida (formato de Tauri: `alt+space`, `ctrl+shift+n`…).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    atajo: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,6 +61,7 @@ pub struct Estado {
 pub struct Biblioteca {
     equipo: Store,
     disco: Option<PathBuf>,
+    atajo: Option<String>,
     ajustes: PathBuf,
 }
 
@@ -80,7 +85,7 @@ impl Biblioteca {
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
         let disco = std::env::var_os("MD_NOTES_DISCO").map(PathBuf::from).or(guardado.disco);
-        Ok(Self { equipo: Store::crear_en(equipo, Lugar::Equipo)?, disco, ajustes })
+        Ok(Self { equipo: Store::crear_en(equipo, Lugar::Equipo)?, disco, atajo: guardado.atajo, ajustes })
     }
 
     // ---------------------------------------------------------------- lugares
@@ -103,6 +108,18 @@ impl Biblioteca {
 
     fn disponibles(&self) -> Vec<Store> {
         [Lugar::Equipo, Lugar::Disco].into_iter().filter_map(|l| self.lugar(l).ok()).collect()
+    }
+
+    /// Atajo global elegido en `ajustes.json` (`None` = el de por defecto).
+    pub fn atajo(&self) -> Option<&str> {
+        self.atajo.as_deref()
+    }
+
+    /// Carpetas raíz de las notas (este equipo y, si está configurado, el disco).
+    pub fn raices(&self) -> Vec<PathBuf> {
+        let mut r = vec![self.equipo.raiz().to_path_buf()];
+        r.extend(self.disco.clone());
+        r
     }
 
     /// Ruta de un id (o la raíz de su lugar) para abrirla en el gestor de archivos.
@@ -135,7 +152,7 @@ impl Biblioteca {
         if let Some(dir) = self.ajustes.parent() {
             fs::create_dir_all(dir)?;
         }
-        let ajustes = Ajustes { disco: self.disco.clone() };
+        let ajustes = Ajustes { disco: self.disco.clone(), atajo: self.atajo.clone() };
         store::escribir(&self.ajustes, &serde_json::to_string_pretty(&ajustes)?)
     }
 
@@ -191,6 +208,109 @@ impl Biblioteca {
         Ok(ids)
     }
 
+    // ---------------------------------------------------------------- relaciones y tareas
+
+    /// Todas las notas de los lugares disponibles, con su cuerpo.
+    pub fn notas_completas(&self) -> Result<Vec<Nota>> {
+        let mut out = Vec::new();
+        for s in self.disponibles() {
+            out.extend(s.notas_completas()?);
+        }
+        Ok(out)
+    }
+
+    /// Archivos de notas de los lugares disponibles, para el índice de similitud.
+    pub fn entradas_indice(&self) -> Result<Vec<indice::Entrada>> {
+        let mut out = Vec::new();
+        for s in self.disponibles() {
+            for ruta in s.archivos()? {
+                out.push(indice::Entrada { id: s.id_de(&ruta), ruta });
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn enlaces(&self, id: &str) -> Result<relaciones::Enlaces> {
+        Ok(relaciones::enlaces(&self.notas_completas()?, id))
+    }
+
+    pub fn aristas(&self) -> Result<Vec<relaciones::Arista>> {
+        Ok(relaciones::todas_las_aristas(&self.notas_completas()?))
+    }
+
+    pub fn contar_enlaces(&self, titulo: &str) -> Result<usize> {
+        Ok(relaciones::contar_a(&self.notas_completas()?, titulo))
+    }
+
+    /// Cambia `[[viejo]]` por `[[nuevo]]` en todas las notas. Devuelve cuántas notas cambiaron.
+    pub fn renombrar_enlaces(&self, viejo: &str, nuevo: &str) -> Result<usize> {
+        let mut cambiadas = 0;
+        for s in self.disponibles() {
+            for path in s.archivos()? {
+                let texto = fs::read_to_string(&path).with_context(|| format!("leyendo {}", path.display()))?;
+                if let Some(nuevo_texto) = relaciones::reemplazar_destino(&texto, viejo, nuevo) {
+                    store::escribir(&path, &nuevo_texto)?;
+                    cambiadas += 1;
+                }
+            }
+        }
+        Ok(cambiadas)
+    }
+
+    pub fn tareas(&self) -> Result<Vec<relaciones::Tarea>> {
+        Ok(self.notas_completas()?.iter().flat_map(relaciones::tareas_de).collect())
+    }
+
+    pub fn marcar_tarea(&self, id: &str, linea: usize, texto: &str, hecha: bool) -> Result<NotaResumen> {
+        let s = self.de(id)?;
+        let path = s.ruta(id)?;
+        let archivo = fs::read_to_string(&path).with_context(|| format!("leyendo {id}"))?;
+        store::escribir(&path, &relaciones::marcar_en_archivo(&archivo, linea, texto, hecha)?)?;
+        Ok(s.leer_nota(id)?.resumen)
+    }
+
+    // ---------------------------------------------------------------- plantillas
+
+    /// Plantillas disponibles para notas de `proyecto` (o de la Bandeja): las del proyecto, las de
+    /// su lugar y las del otro lugar, sin repetir nombre. La primera vez crea las de ejemplo.
+    pub fn plantillas(&self, proyecto: Option<&str>) -> Result<Vec<plantillas::Plantilla>> {
+        let _ = plantillas::sembrar(self.equipo.raiz());
+        let mut dirs: Vec<(PathBuf, &str)> = Vec::new();
+        let lugar = proyecto.and_then(|p| Lugar::de_id(p).ok()).unwrap_or(Lugar::Equipo);
+        if let Some(p) = proyecto
+            && let Ok(dir) = self.ruta(Some(p), lugar)
+        {
+            dirs.push((dir.join(plantillas::CARPETA), "proyecto"));
+        }
+        for l in [lugar, if lugar == Lugar::Equipo { Lugar::Disco } else { Lugar::Equipo }] {
+            if let Ok(s) = self.lugar(l) {
+                dirs.push((s.raiz().join(plantillas::CARPETA), l.prefijo()));
+            }
+        }
+        let mut out: Vec<plantillas::Plantilla> = Vec::new();
+        for (dir, origen) in dirs {
+            for p in plantillas::leer_dir(&dir, origen) {
+                if !out.iter().any(|q| q.nombre.to_lowercase() == p.nombre.to_lowercase()) {
+                    out.push(p);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Carpeta de plantillas de un proyecto o, sin proyecto, la general de este equipo (se crea).
+    pub fn carpeta_plantillas(&self, proyecto: Option<&str>) -> Result<PathBuf> {
+        let dir = match proyecto {
+            Some(p) => self.ruta(Some(p), Lugar::Equipo)?.join(plantillas::CARPETA),
+            None => {
+                plantillas::sembrar(self.equipo.raiz())?;
+                self.equipo.raiz().join(plantillas::CARPETA)
+            }
+        };
+        fs::create_dir_all(&dir)?;
+        Ok(dir)
+    }
+
     // ---------------------------------------------------------------- notas
 
     /// Sin proyecto, la nota va a la Bandeja del disco si está conectado; si no, a la del equipo.
@@ -206,7 +326,49 @@ impl Biblioteca {
     pub fn guardar_nota(&self, id: &str, titulo: &str, etiquetas: &[String], hoja: Option<&str>, pauta: Option<&str>, cuerpo: &str) -> Result<NotaResumen> {
         let s = self.de(id)?;
         self.registrar_etiquetas(&s, etiquetas)?;
-        s.guardar_nota(id, titulo, etiquetas, hoja, pauta, cuerpo)
+        // Historial: el texto anterior, si la última instantánea tiene más de 10 minutos.
+        let dir = self.dir_historial(id)?;
+        if let Ok(anterior) = fs::read_to_string(s.ruta(id)?) {
+            let _ = historial::instantanea(&dir, &anterior, chrono::Local::now(), Some(historial::INTERVALO_SEG));
+        }
+        let guardada = s.guardar_nota(id, titulo, etiquetas, hoja, pauta, cuerpo)?;
+        if guardada.id != id {
+            historial::trasladar(&dir, &self.dir_historial(&guardada.id)?);
+        }
+        Ok(guardada)
+    }
+
+    // ---------------------------------------------------------------- historial
+
+    fn dir_historial(&self, id: &str) -> Result<PathBuf> {
+        let s = self.de(id)?;
+        let rel = id.split_once(':').map(|(_, r)| r).context("id sin lugar")?;
+        Ok(historial::carpeta(s.raiz(), rel))
+    }
+
+    /// Instantánea del estado actual (al cerrar o cambiar de nota), si cambió desde la última.
+    pub fn instantanea(&self, id: &str) -> Result<bool> {
+        let texto = fs::read_to_string(self.de(id)?.ruta(id)?)?;
+        historial::instantanea(&self.dir_historial(id)?, &texto, chrono::Local::now(), None)
+    }
+
+    pub fn versiones(&self, id: &str) -> Result<Vec<historial::Version>> {
+        Ok(historial::versiones(&self.dir_historial(id)?))
+    }
+
+    pub fn leer_version(&self, id: &str, nombre: &str) -> Result<String> {
+        historial::leer(&self.dir_historial(id)?, nombre)
+    }
+
+    /// Vuelve a una versión. Antes guarda el estado actual, así restaurar se puede deshacer.
+    pub fn restaurar_version(&self, id: &str, nombre: &str) -> Result<()> {
+        let dir = self.dir_historial(id)?;
+        let texto = historial::leer(&dir, nombre)?;
+        let ruta = self.de(id)?.ruta(id)?;
+        if let Ok(actual) = fs::read_to_string(&ruta) {
+            historial::instantanea(&dir, &actual, chrono::Local::now(), None)?;
+        }
+        store::escribir(&ruta, &texto)
     }
 
     /// Mueve una nota a otro proyecto, aunque esté en el otro lugar.
@@ -219,13 +381,35 @@ impl Biblioteca {
             return Ok(nota.resumen);
         }
         self.registrar_etiquetas(&destino, &nota.resumen.etiquetas)?;
+        let texto = fs::read_to_string(&path)?;
         let movida = destino.recibir_nota(&path, proyecto)?;
+        // Los adjuntos (`assets/…`) acompañan a la nota; si cambia algún nombre, se reescribe.
+        let nueva = destino.ruta(&movida.id)?;
+        if let Some(carpeta) = path.parent()
+            && let Some(reescrito) = adjuntos::acompanar(&texto, carpeta, &path, &nueva)?
+        {
+            store::escribir(&nueva, &reescrito)?;
+        }
         fs::remove_file(&path).with_context(|| format!("quitando {}", path.display()))?;
+        historial::trasladar(&self.dir_historial(id)?, &self.dir_historial(&movida.id)?);
         Ok(movida)
     }
 
+    /// Manda la nota a la papelera, con los adjuntos que ninguna otra nota usa.
     pub fn borrar_nota(&self, id: &str) -> Result<()> {
-        self.de(id)?.borrar(id)
+        let s = self.de(id)?;
+        let path = s.ruta(id)?;
+        let huerfanos = fs::read_to_string(&path).map(|t| adjuntos::huerfanos_al_borrar(&t, &path)).unwrap_or_default();
+        s.borrar(id)?;
+        for a in huerfanos {
+            let _ = s.a_papelera(&a);
+        }
+        Ok(())
+    }
+
+    /// Guarda bytes como adjunto de una nota. Devuelve la ruta relativa (`assets/…`).
+    pub fn adjuntar_bytes(&self, id: &str, nombre: &str, bytes: &[u8]) -> Result<String> {
+        adjuntos::guardar(&self.de(id)?.ruta(id)?, nombre, bytes)
     }
 
     // ---------------------------------------------------------------- proyectos

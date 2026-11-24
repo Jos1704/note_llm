@@ -139,3 +139,11 @@ Pendiente: en Hyprland el notch aparece flotando en el centro (200×200, fondo g
 - `estilos.css` reescrito: cada paleta define solo semillas (`--l-*`, `--d-*`) y los tokens se derivan con `color-mix`. Notas en Literata, interfaz en Inter, editor en JetBrains Mono; renglón de 28px.
 - La nota es una tarjeta: la hoja (`data-hoja`/`data-pauta`) se aplica a `.editor`, así barra, título y paneles toman el color de la hoja. Hojas renombradas en la interfaz: Papel, Arena, Pizarra (los valores guardados siguen siendo `blanca`/`amarilla`/`negra`).
 - Paleta de etiquetas nueva (tonos suaves) en `biblioteca.rs`; las etiquetas existentes conservan su color.
+
+## Revisión 6 (2026-11-23) — widget del notch en macOS
+
+- `src-tauri/src/notch.rs` (solo macOS, `objc2-app-kit`): ventana `notch` transparente, en `NSStatusWindowLevel`, en todos los Spaces y sobre pantalla completa. Mide el notch con `safeAreaInsets` + `auxiliaryTopLeft/RightArea`; sin notch, franja de 200×6 pt.
+- Hover detectado en Rust (sondeo de `NSEvent.mouseLocation` cada 50 ms; WebKit no da hover en ventanas inactivas). Al entrar 2 ticks seguidos agranda la ventana al panel (460×300) y emite `notch:abrir`; con el panel abierto emite `notch:fuera`/`notch:dentro`.
+- `notch.html` + `src/notch.ts` reescritos: el panel crece desde el tamaño del notch; título, texto y proyecto; `⌘↩` guarda con `crearNotaRapida` y emite `notas-cambiaron`; `Esc`/clic fuera/salir con el ratón (sin escribir) pliegan. Borrador en `localStorage`.
+- Comando `notch_cerrar(devolver_foco)`: pliega la ventana y, si la app no estaba activa al abrir, `NSApp.deactivate()` para volver a la app anterior. Tras cerrar hay que sacar el ratón del notch antes de reabrir.
+- `lib.rs`: el notch se crea en `setup` (no con `--rapida`); `RunEvent::Reopen` reabre la ventana principal desde el Dock.

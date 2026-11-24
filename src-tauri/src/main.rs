@@ -10,5 +10,14 @@ fn main() {
         }
         return;
     }
+    // Nota rápida sin ventanas (panel de Quickshell en Linux, scripts).
+    let args: Vec<String> = std::env::args().collect();
+    if md_notes_lib::rapida::atender(&args) {
+        return;
+    }
+    // Linux: si el panel de Quickshell está activo, `--capturar` lo abre a él.
+    if args.iter().any(|a| a == "--capturar") && md_notes_lib::rapida::abrir_panel_externo() {
+        return;
+    }
     md_notes_lib::run()
 }
