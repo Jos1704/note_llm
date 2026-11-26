@@ -148,6 +148,25 @@ impl Biblioteca {
         self.guardar_ajustes()
     }
 
+    /// Guarda la paleta y el modo de la app en `tema.json` (junto a los ajustes) para que los
+    /// paneles externos, como el de Quickshell en Linux, usen los mismos colores. Solo escribe si
+    /// cambió, para no despertar a quien vigila el archivo.
+    pub fn guardar_tema(&self, paleta: &str, modo: &str) -> Result<()> {
+        let valido = |s: &str| !s.is_empty() && s.len() <= 32 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        if !valido(paleta) || !valido(modo) {
+            bail!("tema no válido");
+        }
+        let ruta = self.ajustes.with_file_name("tema.json");
+        let nuevo = serde_json::to_string_pretty(&serde_json::json!({ "paleta": paleta, "modo": modo }))?;
+        if fs::read_to_string(&ruta).is_ok_and(|t| t == nuevo) {
+            return Ok(());
+        }
+        if let Some(dir) = ruta.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        store::escribir(&ruta, &nuevo)
+    }
+
     fn guardar_ajustes(&self) -> Result<()> {
         if let Some(dir) = self.ajustes.parent() {
             fs::create_dir_all(dir)?;

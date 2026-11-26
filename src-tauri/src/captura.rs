@@ -374,11 +374,12 @@ mod sistema {
     use crate::Res;
 
     fn texto(primaria: bool) -> Option<String> {
-        let wl: &[&str] = if primaria { &["--primary", "--no-newline"] } else { &["--no-newline"] };
+        // Sin `--type text`, si solo hay una imagen wl-paste devuelve sus bytes como si fueran texto.
+        let wl: &[&str] = if primaria { &["--primary", "--no-newline", "--type", "text"] } else { &["--no-newline", "--type", "text"] };
         let x: &[&str] = if primaria { &["-o", "-selection", "primary"] } else { &["-o", "-selection", "clipboard"] };
         ejecutar("wl-paste", wl)
             .or_else(|| ejecutar("xclip", x))
-            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .and_then(|b| String::from_utf8(b).ok()) // binario: no es texto
             .filter(|t| !t.trim().is_empty())
     }
 

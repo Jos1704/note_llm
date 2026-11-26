@@ -106,19 +106,28 @@ configuración de [Quickshell](https://quickshell.org) (`linux/quickshell/notas/
 
 - Pasa el ratón por el **borde superior, al centro** de la pantalla y baja el panel (en cada
   monitor). Si sacas el ratón sin escribir, se pliega.
-- `Ctrl+↩` guarda, `Esc` cierra. Mismos prefijos `#etiqueta` / `@proyecto` y botones de
-  portapapeles, selección (primaria) y captura (`grim` + `slurp`, OCR con `tesseract`).
-- En Hyprland (`~/.config/hypr/hyprland.conf`, en Omarchy `~/.config/hypr/bindings.conf`):
+- `Ctrl+↩` guarda, `Esc` cierra. Mismos prefijos `#etiqueta` / `@proyecto`, con sugerencias
+  mientras escribes (`Tab` acepta la primera), y botones de portapapeles, selección (primaria) y
+  captura (`grim` + `slurp`, OCR con `tesseract`). `Ctrl+V` en el texto también pega imágenes.
+- Usa la paleta y el modo de la app: la app los copia a `~/.config/md-notes/tema.json` y el panel
+  los cambia al momento. En modo *Sistema* sigue a `gsettings … color-scheme`.
+- En Omarchy, `scripts/install.sh` también instala el botón de la barra
+  (`~/.config/omarchy/bar/modules/NotaRapida.qml`): clic abre el panel, clic derecho la app.
+- En Hyprland con Omarchy (`~/.config/hypr/autostart.lua` y `bindings.lua`; `Alt+Space` es del
+  dictado):
 
+  ```lua
+  o.exec_on_start("qs -c notas -d")
+  o.bind("SUPER + ALT + N", "Nota rápida", "~/.local/bin/md-notes --capturar")
   ```
-  exec-once = qs -c notas -d
-  bind = ALT, SPACE, exec, md-notes --capturar
-  ```
+
+  Con la configuración clásica (`hyprland.conf`): `exec-once = qs -c notas -d` y
+  `bind = SUPER ALT, N, exec, md-notes --capturar`.
 
   `md-notes --capturar` abre el panel en el monitor activo si está corriendo y, si no, la ventana
   de nota rápida.
 - Guarda con la línea de comandos, que también sirve para scripts: `md-notes --proyectos`,
-  `md-notes --guardar-rapida [--titulo T] [--proyecto ID] -- texto`, `--portapapeles`,
+  `--etiquetas`, `md-notes --guardar-rapida [--titulo T] [--proyecto ID] -- texto`, `--portapapeles`,
   `--seleccion`, `--captura-pantalla` (todas responden JSON).
 
 **Cambiar el atajo:** en `~/Library/Application Support/md-notes/ajustes.json` (Linux:

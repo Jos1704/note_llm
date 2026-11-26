@@ -39,6 +39,11 @@ DESKTOP
     else
       echo "ℹ Panel copiado a ~/.config/quickshell/notas; instala Quickshell para usarlo"
     fi
+    # Omarchy: botón de la barra (clic: panel de nota rápida · clic derecho: abrir Notas).
+    if [ -d "$HOME/.config/omarchy/bar" ]; then
+      install -Dm644 linux/omarchy/NotaRapida.qml "$HOME/.config/omarchy/bar/modules/NotaRapida.qml"
+      echo "✔ Botón de la barra en ~/.config/omarchy/bar/modules/NotaRapida.qml"
+    fi
     ;;
   *)
     echo "Sistema no soportado: $(uname -s)" >&2
