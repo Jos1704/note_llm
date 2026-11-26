@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! md-notes --proyectos                         → [{"id":"equipo:trabajo","nombre":"Trabajo"}, …]
+//! md-notes --etiquetas                         → [{"nombre":"rust","color":"#6e9c84"}, …]
 //! md-notes --portapapeles                      → {"tipo":"texto","texto":"…"} | {"tipo":"imagen","nombre":"…"} | {"tipo":"vacio"}
 //! md-notes --seleccion                         → {"texto":"…"}
 //! md-notes --captura-pantalla                  → {"nombre":"…","texto":"…"} | null (cancelada)
@@ -18,13 +19,14 @@ use crate::biblioteca::Biblioteca;
 use crate::captura;
 use crate::store::{Lugar, Proyecto, normalizar_etiqueta, slug};
 
-pub const ARGS: &[&str] = &["--proyectos", "--portapapeles", "--seleccion", "--captura-pantalla", "--guardar-rapida"];
+pub const ARGS: &[&str] = &["--proyectos", "--etiquetas", "--portapapeles", "--seleccion", "--captura-pantalla", "--guardar-rapida"];
 
 /// Si los argumentos piden una orden de esta línea de comandos, la ejecuta y devuelve `true`.
 pub fn atender(args: &[String]) -> bool {
     let Some(orden) = args.iter().find(|a| ARGS.contains(&a.as_str())) else { return false };
     let r = match orden.as_str() {
         "--proyectos" => proyectos(),
+        "--etiquetas" => etiquetas(),
         "--portapapeles" => json(&captura::portapapeles()),
         "--seleccion" => json(&captura::texto_seleccionado().map(|texto| serde_json::json!({ "texto": texto }))),
         "--captura-pantalla" => json(&captura::capturar_a_temporal()),
@@ -73,6 +75,19 @@ fn proyectos() -> Result<String, String> {
     let lista: Vec<_> = lista_proyectos(&b)?
         .into_iter()
         .map(|p| serde_json::json!({ "id": p.id, "nombre": p.nombre, "disco": p.lugar == Lugar::Disco }))
+        .collect();
+    serde_json::to_string(&lista).map_err(|e| e.to_string())
+}
+
+/// Etiquetas existentes, para las sugerencias de `#etiqueta` del panel.
+fn etiquetas() -> Result<String, String> {
+    let b = biblioteca()?;
+    let lista: Vec<_> = b
+        .estado()
+        .map_err(|e| format!("{e:#}"))?
+        .etiquetas
+        .into_iter()
+        .map(|e| serde_json::json!({ "nombre": e.nombre, "color": e.color }))
         .collect();
     serde_json::to_string(&lista).map_err(|e| e.to_string())
 }

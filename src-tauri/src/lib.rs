@@ -317,6 +317,12 @@ fn obtener_titulo_url(url: String) -> Res<String> {
     Ok(titulo_de_html(&cuerpo))
 }
 
+/// Copia el tema de la app a `tema.json` para el panel de Quickshell (Linux).
+#[tauri::command]
+fn guardar_tema(b: Bib, paleta: String, modo: String) -> Res<()> {
+    con(&b, |b| b.guardar_tema(&paleta, &modo))
+}
+
 /// Cierra la ventana de nota rápida. Si la app se abrió solo para ella, el proceso termina.
 #[tauri::command]
 fn cerrar_rapida(window: WebviewWindow) -> Res<()> {
@@ -596,6 +602,7 @@ pub fn run() {
             abrir_url,
             obtener_titulo_url,
             cerrar_rapida,
+            guardar_tema,
             enlaces,
             relacionadas,
             pares_similares,

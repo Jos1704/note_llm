@@ -6,6 +6,7 @@ import "@fontsource-variable/literata/opsz.css";
 import "@fontsource-variable/literata/opsz-italic.css";
 import "@fontsource-variable/jetbrains-mono";
 import "@fontsource-variable/oswald";
+import { invoke } from "@tauri-apps/api/core";
 
 export type Paleta = "bruma" | "lavanda" | "marea" | "eva" | "vidrio";
 export type ModoTema = "auto" | "light" | "dark";
@@ -58,14 +59,22 @@ export function aplicarTema(paleta: Paleta, modo: ModoTema) {
   else raiz.dataset.theme = modo;
 }
 
+/** Copia el tema a `tema.json` (backend) para el panel de Quickshell en Linux, que no ve este
+ * almacenamiento. El backend solo escribe si cambió. */
+function publicarTema(paleta: Paleta, modo: ModoTema) {
+  invoke("guardar_tema", { paleta, modo }).catch(() => {});
+}
+
 export function cambiarTema(paleta: Paleta, modo: ModoTema) {
   guardar("paleta", paleta);
   guardar("tema", modo === "auto" ? null : modo);
   aplicarTema(paleta, modo);
+  publicarTema(paleta, modo);
 }
 
 // Al cargar: aplicar lo guardado antes de pintar nada.
 {
   const { paleta, modo } = temaActual();
   aplicarTema(paleta, modo);
+  publicarTema(paleta, modo);
 }
